@@ -60,6 +60,7 @@ instance Error WError where
 
 instance Show WError where
   show (UnknownVariable n) = printf "Unknown variable %s" n
+  show (OccursCheck   n t) = printf "Occurs check fails: %s occurs in %s" n (show t)
   show (CannotUnify   a b) = printf "Cannot unify %s with %s" (show a) (show b)
   show (OtherError    msg) = msg
   show (NoMsg            ) = "Dead."
@@ -68,8 +69,8 @@ type W a = ErrorT WError (Supply Name) a
 type U a = Either WError a
 
 -- |Occurs check for Robinson's unification algorithm.
-occursIn :: Name -> Type -> Bool
-occursIn n t = S.member n (ftv t)
+occurs :: Name -> Type -> Bool
+occurs n t = S.member n (ftv t)
 
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> W TySubst
@@ -81,15 +82,14 @@ u (TyArr a1 b1) (TyArr a2 b2)
        s2 <- u (subst s1 b1) (subst s1 b2)
        return $ s2 <> s1
 u t (TyVar n)
-  | n `occursIn` t  = return $ M.singleton n t
-  | otherwise       = throwError $ OccursCheck n t
+  | n `occurs` t  = throwError $ OccursCheck n t
+  | otherwise     = return $ M.singleton n t
 u (TyVar n) t
-  | n `occursIn` t  = return $ M.singleton n t
-  | otherwise       = throwError $ OccursCheck n t
+  | n `occurs` t  = throwError $ OccursCheck n t
+  | otherwise     = return $ M.singleton n t
 u t1 t2
   = throwError $ CannotUnify t1 t2
 
--- |Types for literals.
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TyCon "Bool"
 typeOf (Integer _) = TyCon "Integer"
@@ -108,33 +108,38 @@ freshNames = fmap (:[]) ['a'..'z']
 w :: (TyEnv,Expr) -> W (Type,TySubst)
 w (env,exp) = case exp of
   Lit l       -> return (typeOf l,mempty)
+  
   Var n       -> case M.lookup n env of
                     Just  v -> return (v,mempty)
                     Nothing -> throwError (UnknownVariable n)
-  Abs x e     -> do a <- fresh;
+  
+  Abs   x e   -> do a <- fresh;
                     (t1,s1) <- w ((x ~> a) env,e);
                     return (TyArr (subst s1 a) t1,s1)
-  App f e     -> do (t1,s1) <- w (env,f);
+  
+  App f   e   -> do (t1,s1) <- w (env,f);
                     (t2,s2) <- w (fmap (subst s1) env,e);
                     a  <- fresh;
                     s3 <- u (subst s2 t1) (TyArr t2 a);
                     return (subst s3 a, mconcat [s3,s2,s1])
+  
   Let x e1 e2 -> do (t1,s1) <- w (env,e1);
                     (t2,s2) <- w ((x ~> t1) (fmap (subst s1) env),e2);
                     return (t2, s2 <> s1)
 
+  -- * extensions to based HM calculus
+  
+  Fix f x e   -> do a <- fresh;
+                    b <- fresh;
+                    let g = TyArr a b;
+                    (t0,s0) <- w ((f ~> g) . (x ~> a) $ env,e);
+                    s1 <- u t0 (subst s0 b);
+                    return (TyArr (subst (s1<>s0) a) (subst s1 t0), s1<>s0)
                     
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  ITE b e1 e2 -> do (t0,s0) <- w (env,b);
+                    (t1,s1) <- w (fmap (subst s0) env,e1);
+                    (t2,s2) <- w (fmap (subst (s1<>s0)) env,e2);
+                    s3 <- u (subst (s2<>s1) t0) (TyCon "Bool");
+                    s4 <- u (subst s3 t2) (subst (s3<>s2) t1);
+                    return (subst (s4<>s3) t2,mconcat [s4,s3,s2,s1])
+  
