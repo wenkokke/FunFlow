@@ -1,6 +1,1 @@
 language: haskell
-
-notifications:
-  email:
-  - pepijnkokke@gmail.com
-  - wlelsing@gmail.com
