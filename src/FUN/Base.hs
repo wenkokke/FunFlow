@@ -20,13 +20,21 @@ data Expr
   | Bin Name Expr Expr
   | Let Name Expr Expr
   | Fix Name Name Expr
-  | Con Name [Expr]
-  | Des Expr Name [Name] Expr
+  | Con Name Expr Expr            -- ^ con constructor arg0 arg1
+  | Des Expr Name Name Name Expr  -- ^ as constructor arg0 arg1 destruct e1 in e2
   | ITE Expr Expr Expr
   deriving (Eq,Show)
-
--- * Syntactic sugar for constructing complex structures
   
+-- * Syntactic sugar for constructing complex structures
+
+-- |Constructs an N-ary cartesian product construction
+con :: Name -> [Expr] -> Expr
+con n xs = foldr1 (Con n) xs
+
+-- |Constructs an N-ary cartesian product destruction
+des :: Expr -> Name -> [Name] -> Expr -> Expr
+des e1 n (x:y:xs) e2 = Des e1 n x y e2
+
 -- |Constructs an N-ary lambda abstraction
 abs :: [Name] -> Expr -> Expr
 abs xs e = foldr Abs e xs

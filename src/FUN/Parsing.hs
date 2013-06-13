@@ -38,8 +38,8 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
   pFix = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
   pDef = iI (,) pIdent ":=" pExpr Ii
   pLet = iI letn "let" (pList1Sep pSemi pDef) "in" pExpr Ii
-  pCon = iI Con pConst (pParens $ pListSep pComma pExpr) Ii
-  pDes = iI Des "case" pExpr "of" pConst (pParens $ pListSep pComma pIdent) "in" pExpr Ii
+  pCon = iI con pConst (pParens $ pList2Sep pComma pExpr) Ii
+  pDes = iI des "case" pExpr "of" pConst (pParens $ pList2Sep pComma pIdent) "in" pExpr Ii
   pITE = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
   
   -- chained expressions

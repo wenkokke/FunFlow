@@ -12,26 +12,30 @@ import Control.Monad.Supply (Supply,supply)
 import Control.Monad.Trans (lift)
 
 data Type
-  = TyCon Name
-  | TyVar Name
-  | TyArr Type Type
+  = TyCon  Name
+  | TyVar  Name
+  | TyArr  Type Type
+  | TyProd Name Type Type
   deriving (Eq)
   
 instance Show Type where
-  show (TyCon n)   = n
-  show (TyVar n)   = n
-  show (TyArr a b) = printf "%s -> %s" (show_parens a) (show_parens b)
+  show (TyCon  n    ) = n
+  show (TyVar  n    ) = n
+  show (TyArr    a b) = printf "%s -> %s" (show_parens a) (show_parens b)
     where
-    show_parens :: Type -> String
-    show_parens (TyCon n)   = n
-    show_parens (TyVar n)   = n
-    show_parens (TyArr a b) = printf "(%s -> %s)" (show a) (show b)
+    show_parens ty@(TyArr _ _) = printf "(%s)" (show ty)
+    show_parens ty             = show ty
+  show (TyProd n a b) = printf "%s %s %s" n (show_parens a) (show_parens b)
+    where
+    show_parens ty@(TyProd _ _ _) = printf "(%s)" (show ty)
+    show_parens ty                = show ty
 
 -- |Returns the set of free type variables in a type.
 ftv :: Type -> Set Name
-ftv (TyCon   _) = S.empty
-ftv (TyVar   n) = S.singleton n
-ftv (TyArr a b) = S.union (ftv a) (ftv b)
+ftv (TyCon      _) = S.empty
+ftv (TyVar      n) = S.singleton n
+ftv (TyArr    a b) = S.union (ftv a) (ftv b)
+ftv (TyProd _ a b) = S.union (ftv a) (ftv b)
   
 type TySubst
   = Map Name Type
@@ -41,13 +45,16 @@ subst :: TySubst -> Type -> Type
 subst m c@(TyCon n) = c
 subst m v@(TyVar n) = M.findWithDefault v n m
 subst m (TyArr f a) = TyArr (subst m f) (subst m a)
+--subst m (TyProd n a b)
 
 type TyEnv
   = Map Name Type
 
 -- |Representation for possible errors in algorithm W.
 data WError
-  = UnknownVariable Name      -- ^ thrown when unknown variable is encountered
+  = CannotDestruct  Type      -- ^ thrown when attempting to destruct a non-product
+  | PatternError    Name Name -- ^ thrown when pattern matching on a different type
+  | UnknownVariable Name      -- ^ thrown when unknown variable is encountered
   | OccursCheck     Name Type -- ^ thrown when occurs check in unify fails
   | CannotUnify     Type Type -- ^ thrown when types cannot be unified
   | OtherError      String    -- ^ stores miscellaneous errors
@@ -59,11 +66,13 @@ instance Error WError where
   strMsg msg  = OtherError msg
 
 instance Show WError where
-  show (UnknownVariable n) = printf "Unknown variable %s" n
-  show (OccursCheck   n t) = printf "Occurs check fails: %s occurs in %s" n (show t)
-  show (CannotUnify   a b) = printf "Cannot unify %s with %s" (show a) (show b)
-  show (OtherError    msg) = msg
-  show (NoMsg            ) = "Dead."
+  show (CannotDestruct   t) = printf "Cannot deconstruct expression of type %s" (show t)
+  show (PatternError   a b) = printf "Cannot match pattern %s with %s" a b
+  show (UnknownVariable  n) = printf "Unknown variable %s" n
+  show (OccursCheck    n t) = printf "Occurs check fails: %s occurs in %s" n (show t)
+  show (CannotUnify    a b) = printf "Cannot unify %s with %s" (show a) (show b)
+  show (OtherError     msg) = msg
+  show (NoMsg             ) = "nope"
 
 type W a = ErrorT WError (Supply Name) a
 type U a = Either WError a
@@ -107,39 +116,61 @@ freshNames = fmap (:[]) ['a'..'z']
 -- |Algorithm W for type inference.
 w :: (TyEnv,Expr) -> W (Type,TySubst)
 w (env,exp) = case exp of
-  Lit l       -> return (typeOf l,mempty)
+  Lit l           -> return (typeOf l,mempty)
   
-  Var n       -> case M.lookup n env of
-                    Just  v -> return (v,mempty)
-                    Nothing -> throwError (UnknownVariable n)
+  Var n           -> case M.lookup n env of
+                        Just  v -> return (v,mempty)
+                        Nothing -> throwError (UnknownVariable n)
   
-  Abs   x e   -> do a <- fresh;
-                    (t1,s1) <- w ((x ~> a) env,e);
-                    return (TyArr (subst s1 a) t1,s1)
+  Abs   x e       -> do a <- fresh;
+                        (t1,s1) <- w ((x ~> a) env,e);
+                        return (TyArr (subst s1 a) t1,s1)
   
-  App f   e   -> do (t1,s1) <- w (env,f);
-                    (t2,s2) <- w (fmap (subst s1) env,e);
-                    a  <- fresh;
-                    s3 <- u (subst s2 t1) (TyArr t2 a);
-                    return (subst s3 a, mconcat [s3,s2,s1])
+  App f   e       -> do (t1,s1) <- w (env,f);
+                        (t2,s2) <- w (fmap (subst s1) env,e);
+                        a  <- fresh;
+                        s3 <- u (subst s2 t1) (TyArr t2 a);
+                        return (subst s3 a, mconcat [s3,s2,s1])
   
-  Let x e1 e2 -> do (t1,s1) <- w (env,e1);
-                    (t2,s2) <- w ((x ~> t1) (fmap (subst s1) env),e2);
-                    return (t2, s2 <> s1)
+  Let x e1 e2     -> do (t1,s1) <- w (env,e1);
+                        (t2,s2) <- w ((x ~> t1).fmap (subst s1) $ env,e2);
+                        return (t2, s2<>s1)
 
-  -- * extensions to based HM calculus
+  -- * adding fixpoint operators
   
-  Fix f x e   -> do a <- fresh;
-                    b <- fresh;
-                    let g = TyArr a b;
-                    (t0,s0) <- w ((f ~> g) . (x ~> a) $ env,e);
-                    s1 <- u t0 (subst s0 b);
-                    return (TyArr (subst (s1<>s0) a) (subst s1 t0), s1<>s0)
+  Fix f x e       -> do a <- fresh;
+                        b <- fresh;
+                        let g = TyArr a b;
+                        (t1,s1) <- w ((f ~> g).(x ~> a) $ env,e);
+                        s2 <- u t1 (subst s1 b);
+                        return (TyArr (subst (s2<>s1) a) (subst s2 t1), s2<>s1)
                     
-  ITE b e1 e2 -> do (t0,s0) <- w (env,b);
-                    (t1,s1) <- w (fmap (subst s0) env,e1);
-                    (t2,s2) <- w (fmap (subst (s1<>s0)) env,e2);
-                    s3 <- u (subst (s2<>s1) t0) (TyCon "Bool");
-                    s4 <- u (subst s3 t2) (subst (s3<>s2) t1);
-                    return (subst (s4<>s3) t2,mconcat [s4,s3,s2,s1])
+  -- * adding if-then-else constructs
+                    
+  ITE b e1 e2     -> do (t1,s1) <- w (env,b);
+                        (t2,s2) <- w (fmap (subst s1) env,e1);
+                        (t3,s3) <- w (fmap (subst (s2<>s1)) env,e2);
+                        s4 <- u (subst (s3<>s2) t1) (TyCon "Bool");
+                        s5 <- u (subst s4 t3) (subst (s4<>s3) t2);
+                        return (subst (s5<>s4) t3,mconcat [s5,s4,s3,s2,s1]) -- warn: added s1 though the book didn't
+                    
+  -- * adding product types
+  
+  Con n x y       -> do (t1,s1) <- w (env,x);
+                        (t2,s2) <- w (fmap (subst s1) env,y);
+                        return (TyProd n t1 t2, s2<>s1)
+                    
+  Des e1 n x y e2 -> do (t1,s1) <- w (env,e1);
+                        (TyProd m a b) <- checkType t1;
+                        checkPattern n m;
+                        (t2,s2) <- w ((y ~> b).(x ~> a).fmap (subst s1) $ env,e2);
+                        return (t2,s2<>s1)
+    where
+    checkPattern n m
+      | n == m    = return () 
+      | otherwise = throwError $ PatternError n m
+    
+    checkType ty = case ty of
+      TyProd _ _ _ -> return ty
+      _            -> throwError $ CannotDestruct ty
   
