@@ -13,11 +13,14 @@ import Text.ParserCombinators.UU.BasicInstances (Parser,pSym)
 
 -- * Parsing the FUN language
 
-pIdent,pConst,pOper :: Parser Name
+pProg :: Parser Prog
+pProg = Prog <$> pDecls
 
-pIdent = lexeme $ (:) <$> pLower <*> pMany pLetter
-pConst = lexeme $ (:) <$> pUpper <*> pMany pLetter
-pOper  = lexeme $ pSome $ pAnySym "!#$%&*+./<=>?@\\^|-~:"
+pDecl :: Parser Decl
+pDecl = iI decl pIdent (pListSep pSpaces pIdent) "=" pExpr Ii
+
+pDecls :: Parser [Decl]
+pDecls = pList1Sep (pSymbol ";") pDecl
 
 pExpr :: Parser Expr
 pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
@@ -36,8 +39,7 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
   -- simple expressions
   pAbs = iI abs "fun" (pList1Sep pSpaces pIdent) "=>" pExpr Ii
   pFix = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
-  pDef = iI def pIdent (pListSep pSpaces pIdent) ":=" pExpr Ii
-  pLet = iI letn "let" (pList1Sep pSemi pDef) "in" pExpr Ii
+  pLet = iI letn "let" pDecls "in" pExpr Ii
   pCon = iI con pConst (pParens $ pList2Sep pComma pExpr) Ii
   pDes = iI des "case" pExpr "of" pConst (pParens $ pList2Sep pComma pIdent) "in" pExpr Ii
   pITE = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
@@ -45,11 +47,11 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
   -- chained expressions
   pApp = pChainl_ng (App <$ pSpaces) pAtom
   pBin = pChainl_ng (bin <$> pOper) pApp
-
--- * Recognising more characters
-
-pSemi :: Parser Char
-pSemi = lexeme $ pSym ';'
+  
+pIdent,pConst,pOper :: Parser Name
+pIdent = lexeme $ (:) <$> pLower <*> pMany pLetter
+pConst = lexeme $ (:) <$> pUpper <*> pMany pLetter
+pOper  = lexeme $ pSome $ pAnySym "!#$%&*+./<=>?@\\^|-~:"
 
 -- * Recognising more list structures with separators
 

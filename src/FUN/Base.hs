@@ -4,6 +4,9 @@ import Prelude hiding (abs)
 
 -- * Abstract syntax tree for the FUN language
 
+data Prog
+  = Prog [Decl]
+
 data Decl
   = Decl Name Expr
 
@@ -47,11 +50,11 @@ fix :: [Name] -> Expr -> Expr
 fix (f:x:xs) e = Fix f x (abs xs e)
 
 -- |Constructs a definition tuple.
-def n xs e = (n,foldr Abs e xs)
+decl n xs e = Decl n (foldr Abs e xs)
 
 -- |Constructs let bindings with multiple definitions
-letn :: [(Name,Expr)] -> Expr -> Expr
-letn defs e = foldr (uncurry Let) e defs
+letn :: [Decl] -> Expr -> Expr
+letn defs e = foldr (\(Decl x e) -> Let x e) e defs
   
 -- |Constructs a binary operator
 bin :: Name -> Expr -> Expr -> Expr

@@ -13,35 +13,7 @@ import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply,supply,evalSupply)
 import Control.Monad.Trans (lift)
 
-runW :: Expr -> Either TypeError Type
-runW e
-  = do t1 <- withFreshNames (do (t,_) <- w (mempty,e); return t);
-       t2 <- withFreshNames (refresh t1);
-       return t2
-
-runWWithDecls :: [Decl] -> Expr -> Either TypeError Type
-runWWithDecls decls e
-  = do t1 <- withFreshNames (do env <- env; (t,_) <- w (env,e); return t);
-       t2 <- withFreshNames (refresh t1);
-       return t2
-  where
-  env :: W TyEnv
-  env = foldr add (return mempty) decls
-  add :: Decl -> W TyEnv -> W TyEnv
-  add (Decl x e) env = do env <- env;
-                          (t,_) <- w (env,e);
-                          return (M.insert x t env)
-
-withFreshNames :: W a -> Either TypeError a
-withFreshNames x = evalSupply (runErrorT x) freshNames
-
--- |Replaces every type variable with a fresh one.
-refresh :: Type -> W Type
-refresh t1 = do subs <- forM (ftv t1)
-                        $ \a ->
-                          do b <- fresh;
-                             return (M.singleton a b)
-                return (subst (mconcat subs) t1)
+-- * Type definitions
 
 data Type
   = TyCon  Name
@@ -61,6 +33,36 @@ instance Show Type where
     where
     show_parens ty@(TyProd _ _ _) = printf "(%s)" (show ty)
     show_parens ty                = show ty
+    
+-- * Algorithm W for Type Inference
+
+-- |Runs algorithm W on a list of declarations, making each previous
+--  declaration an available expression in the next.
+runW :: [Decl] -> Either TypeError TyEnv
+runW = withFreshNames . foldl addDecl (return mempty)
+  where
+  addDecl :: W TyEnv -> Decl-> W TyEnv
+  addDecl env (Decl x e) = do env <- env;
+                              (t,_) <- w (env,e);
+                              return (M.insert x t env)
+
+-- |Provides an infinite stream of names to things in the @W@ monad,
+--  reducing it to just an @Either@ value containing perhaps a TypeError.
+withFreshNames :: W a -> Either TypeError a
+withFreshNames x = evalSupply (runErrorT x) freshNames
+  where
+  freshNames = letters ++ numbers
+    where
+    letters = fmap (: []) ['a'..'z']
+    numbers = fmap (('t' :) . show) [0..]
+
+-- |Replaces every type variable with a fresh one.
+refresh :: Type -> W Type
+refresh t1 = do subs <- forM (ftv t1)
+                        $ \a ->
+                          do b <- fresh;
+                             return (M.singleton a b)
+                return (subst (mconcat subs) t1)
 
 -- |Returns the set of free type variables in a type.
 ftv :: Type -> [Name]
@@ -69,18 +71,16 @@ ftv (TyVar      n) = [n]
 ftv (TyArr    a b) = L.union (ftv a) (ftv b)
 ftv (TyProd _ a b) = L.union (ftv a) (ftv b)
   
-type TySubst
-  = Map Name Type
+type TySubst = Map Name Type
 
 -- |Substitutes a type for a type variable in a type.
 subst :: TySubst -> Type -> Type
-subst m c@(TyCon n) = c
-subst m v@(TyVar n) = M.findWithDefault v n m
-subst m (TyArr f a) = TyArr (subst m f) (subst m a)
---subst m (TyProd n a b)
+subst m c@(TyCon _)    = c
+subst m v@(TyVar n)    = M.findWithDefault v n m
+subst m (TyArr    a b) = TyArr (subst m a) (subst m b)
+subst m (TyProd n a b) = TyProd n (subst m a) (subst m b)
 
-type TyEnv
-  = Map Name Type
+type TyEnv = Map Name Type
 
 -- |Representation for possible errors in algorithm W.
 data TypeError
@@ -107,7 +107,6 @@ instance Show TypeError where
   show (NoMsg             ) = "nope"
 
 type W a = ErrorT TypeError (Supply Name) a
-type U a = Either TypeError a
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: Name -> Type -> Bool
@@ -116,31 +115,27 @@ occurs n t = n `elem` (ftv t)
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> W TySubst
 u t1@(TyCon a) t2@(TyCon b)
-  | a == b    = return $ mempty
-  | otherwise = throwError $ CannotUnify t1 t2
+  | a == b        = return mempty
+  | otherwise     = throwError (CannotUnify t1 t2)
 u (TyArr a1 b1) (TyArr a2 b2)
-  = do s1 <- u a1 a2
-       s2 <- u (subst s1 b1) (subst s1 b2)
-       return $ s2 <> s1
-u t (TyVar n)
-  | n `occurs` t  = throwError $ OccursCheck n t
-  | otherwise     = return $ M.singleton n t
-u (TyVar n) t
-  | n `occurs` t  = throwError $ OccursCheck n t
-  | otherwise     = return $ M.singleton n t
-u t1 t2
-  = throwError $ CannotUnify t1 t2
+                  = do
+                    s1 <- u a1 a2
+                    s2 <- u (subst s1 b1) (subst s1 b2)
+                    return (s2 <> s1)
+u t1 (TyVar n)
+  | n `occurs` t1 = throwError (OccursCheck n t1)
+  | otherwise     = return (M.singleton n t1)
+u (TyVar n) t2
+  | n `occurs` t2 = throwError (OccursCheck n t2)
+  | otherwise     = return (M.singleton n t2)
+u t1 t2           = throwError (CannotUnify t1 t2)
 
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TyCon "Bool"
 typeOf (Integer _) = TyCon "Integer"
 
 fresh :: W Type
-fresh = do x <- lift supply;
-           return (TyVar x)
-           
-freshNames :: [Name]
-freshNames = fmap (:[]) ['a'..'z']
+fresh = do x <- lift supply; return (TyVar x)
 
 (~>) :: Name -> Type -> TyEnv -> TyEnv
 (~>) = M.insert
