@@ -155,7 +155,7 @@ w (env,exp) = case exp of
                         -- TODO maybe apply subst over substs
                         s4 <- u (subst (s3<>s2) t1) (TyCon "Bool");
                         s5 <- u (subst s4 t3) (subst (s4<>s3) t2);
-                        return (subst (s5<>s4) t3, s5<>u432)
+                        return (subst (s5<>s4) t3, s5<>s4<>s3<>s2)
                     
   -- * adding product types
   
