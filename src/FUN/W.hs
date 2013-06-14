@@ -130,7 +130,8 @@ w (env,exp) = case exp of
                         (t2,s2) <- w (fmap (subst s1) env,e);
                         a  <- fresh;
                         s3 <- u (subst s2 t1) (TyArr t2 a);
-                        return (subst s3 a, mconcat [s3,s2,s1])
+                        let u21 = fmap (subst s3) (s2<>s1);
+                        return (subst s3 a, s3<>u21)
   
   Let x e1 e2     -> do (t1,s1) <- w (env,e1);
                         (t2,s2) <- w ((x ~> t1).fmap (subst s1) $ env,e2);
@@ -143,16 +144,18 @@ w (env,exp) = case exp of
                         let g = TyArr a b;
                         (t1,s1) <- w ((f ~> g).(x ~> a) $ env,e);
                         s2 <- u t1 (subst s1 b);
-                        return (TyArr (subst (s2<>s1) a) (subst s2 t1), s2<>s1)
+                        let u1 = fmap (subst s2) s1
+                        return (TyArr (subst (s2<>s1) a) (subst s2 t1), s2<>u1)
                     
   -- * adding if-then-else constructs
                     
   ITE b e1 e2     -> do (t1,s1) <- w (env,b);
                         (t2,s2) <- w (fmap (subst s1) env,e1);
                         (t3,s3) <- w (fmap (subst (s2<>s1)) env,e2);
+                        -- TODO maybe apply subst over substs
                         s4 <- u (subst (s3<>s2) t1) (TyCon "Bool");
                         s5 <- u (subst s4 t3) (subst (s4<>s3) t2);
-                        return (subst (s5<>s4) t3,mconcat [s5,s4,s3,s2,s1]) -- warn: added s1 though the book didn't
+                        return (subst (s5<>s4) t3, s5<>u432)
                     
   -- * adding product types
   
