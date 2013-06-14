@@ -36,7 +36,7 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
   -- simple expressions
   pAbs = iI abs "fun" (pList1Sep pSpaces pIdent) "=>" pExpr Ii
   pFix = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
-  pDef = iI (,) pIdent ":=" pExpr Ii
+  pDef = iI def pIdent (pListSep pSpaces pIdent) ":=" pExpr Ii
   pLet = iI letn "let" (pList1Sep pSemi pDef) "in" pExpr Ii
   pCon = iI con pConst (pParens $ pList2Sep pComma pExpr) Ii
   pDes = iI des "case" pExpr "of" pConst (pParens $ pList2Sep pComma pIdent) "in" pExpr Ii

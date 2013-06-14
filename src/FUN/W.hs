@@ -2,14 +2,46 @@ module FUN.W where
 
 import FUN.Base
 import Text.Printf (printf)
-import Data.Monoid
-import Data.Set (Set)
-import qualified Data.Set as S
+
 import Data.Map (Map)
 import qualified Data.Map as M
-import Control.Monad.Error (Error (..),ErrorT,throwError)
-import Control.Monad.Supply (Supply,supply)
+import qualified Data.List as L (union)
+import Data.Monoid
+import Data.Traversable (forM)
+
+import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
+import Control.Monad.Supply (Supply,supply,evalSupply)
 import Control.Monad.Trans (lift)
+
+runW :: Expr -> Either TypeError Type
+runW e
+  = do t1 <- withFreshNames (do (t,_) <- w (mempty,e); return t);
+       t2 <- withFreshNames (refresh t1);
+       return t2
+
+runWWithDecls :: [Decl] -> Expr -> Either TypeError Type
+runWWithDecls decls e
+  = do t1 <- withFreshNames (do env <- env; (t,_) <- w (env,e); return t);
+       t2 <- withFreshNames (refresh t1);
+       return t2
+  where
+  env :: W TyEnv
+  env = foldr add (return mempty) decls
+  add :: Decl -> W TyEnv -> W TyEnv
+  add (Decl x e) env = do env <- env;
+                          (t,_) <- w (env,e);
+                          return (M.insert x t env)
+
+withFreshNames :: W a -> Either TypeError a
+withFreshNames x = evalSupply (runErrorT x) freshNames
+
+-- |Replaces every type variable with a fresh one.
+refresh :: Type -> W Type
+refresh t1 = do subs <- forM (ftv t1)
+                        $ \a ->
+                          do b <- fresh;
+                             return (M.singleton a b)
+                return (subst (mconcat subs) t1)
 
 data Type
   = TyCon  Name
@@ -31,11 +63,11 @@ instance Show Type where
     show_parens ty                = show ty
 
 -- |Returns the set of free type variables in a type.
-ftv :: Type -> Set Name
-ftv (TyCon      _) = S.empty
-ftv (TyVar      n) = S.singleton n
-ftv (TyArr    a b) = S.union (ftv a) (ftv b)
-ftv (TyProd _ a b) = S.union (ftv a) (ftv b)
+ftv :: Type -> [Name]
+ftv (TyCon      _) = [ ]
+ftv (TyVar      n) = [n]
+ftv (TyArr    a b) = L.union (ftv a) (ftv b)
+ftv (TyProd _ a b) = L.union (ftv a) (ftv b)
   
 type TySubst
   = Map Name Type
@@ -51,35 +83,35 @@ type TyEnv
   = Map Name Type
 
 -- |Representation for possible errors in algorithm W.
-data WError
+data TypeError
   = CannotDestruct  Type      -- ^ thrown when attempting to destruct a non-product
   | PatternError    Name Name -- ^ thrown when pattern matching on a different type
-  | UnknownVariable Name      -- ^ thrown when unknown variable is encountered
+  | UnboundVariable Name      -- ^ thrown when unknown variable is encountered
   | OccursCheck     Name Type -- ^ thrown when occurs check in unify fails
   | CannotUnify     Type Type -- ^ thrown when types cannot be unified
   | OtherError      String    -- ^ stores miscellaneous errors
   | NoMsg                     -- ^ please don't be a jackass; don't use this
   deriving Eq
 
-instance Error WError where
+instance Error TypeError where
   noMsg       = NoMsg
   strMsg msg  = OtherError msg
 
-instance Show WError where
+instance Show TypeError where
   show (CannotDestruct   t) = printf "Cannot deconstruct expression of type %s" (show t)
   show (PatternError   a b) = printf "Cannot match pattern %s with %s" a b
-  show (UnknownVariable  n) = printf "Unknown variable %s" n
+  show (UnboundVariable  n) = printf "Unknown variable %s" n
   show (OccursCheck    n t) = printf "Occurs check fails: %s occurs in %s" n (show t)
   show (CannotUnify    a b) = printf "Cannot unify %s with %s" (show a) (show b)
   show (OtherError     msg) = msg
   show (NoMsg             ) = "nope"
 
-type W a = ErrorT WError (Supply Name) a
-type U a = Either WError a
+type W a = ErrorT TypeError (Supply Name) a
+type U a = Either TypeError a
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: Name -> Type -> Bool
-occurs n t = S.member n (ftv t)
+occurs n t = n `elem` (ftv t)
 
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> W TySubst
@@ -120,7 +152,7 @@ w (env,exp) = case exp of
   
   Var n           -> case M.lookup n env of
                         Just  v -> return (v,mempty)
-                        Nothing -> throwError (UnknownVariable n)
+                        Nothing -> throwError (UnboundVariable n)
   
   Abs   x e       -> do a <- fresh;
                         (t1,s1) <- w ((x ~> a) env,e);
