@@ -3,12 +3,16 @@ module FUN.W where
 import FUN.Base
 import Text.Printf (printf)
 
+import Prelude hiding (mapM)
+
 import Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.List as L (union)
-import Data.Monoid
-import Data.Traversable (forM)
 
+import Data.Monoid hiding ((<>))
+import Data.Traversable (forM,mapM)
+
+import Control.Monad (join)
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply,supply,evalSupply)
 import Control.Monad.Trans (lift)
@@ -19,27 +23,36 @@ data Type
   = TyCon  Name
   | TyVar  Name
   | TyArr  Type Type
+  | TySum  Name Type Type
   | TyProd Name Type Type
   deriving (Eq)
   
 instance Show Type where
   show (TyCon  n    ) = n
   show (TyVar  n    ) = n
-  show (TyArr    a b) = printf "%s -> %s" (show_parens a) (show_parens b)
+  show (TyArr    a b) = printf "%s -> %s" (wrap a) (wrap b)
     where
-    show_parens ty@(TyArr _ _) = printf "(%s)" (show ty)
-    show_parens ty             = show ty
-  show (TyProd n a b) = printf "%s %s %s" n (show_parens a) (show_parens b)
+    wrap ty@(TyArr _ _) = printf "(%s)" (show ty)
+    wrap ty             = show ty
+  show (TySum n a b) = printf "%s %s %s" n (wrap a) (wrap b)
     where
-    show_parens ty@(TyProd _ _ _) = printf "(%s)" (show ty)
-    show_parens ty                = show ty
+    wrap ty@(TyProd _ _ _) = printf "(%s)" (show ty)
+    wrap ty@(TySum  _ _ _) = printf "(%s)" (show ty)
+    wrap ty@(TyArr  _ _)   = printf "(%s)" (show ty)
+    wrap ty                = show ty
+  show (TyProd n a b) = printf "%s %s %s" n (wrap a) (wrap b)
+    where
+    wrap ty@(TyProd _ _ _) = printf "(%s)" (show ty)
+    wrap ty@(TySum  _ _ _) = printf "(%s)" (show ty)
+    wrap ty@(TyArr  _ _)   = printf "(%s)" (show ty)
+    wrap ty                = show ty
     
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
 runW :: [Decl] -> Either TypeError TyEnv
-runW = withFreshNames . foldl addDecl (return mempty)
+runW = refreshAll . withFreshNames . foldl addDecl (return mempty)
   where
   addDecl :: W TyEnv -> Decl-> W TyEnv
   addDecl env (Decl x e) = do env <- env;
@@ -55,6 +68,10 @@ withFreshNames x = evalSupply (runErrorT x) freshNames
     where
     letters = fmap (: []) ['a'..'z']
     numbers = fmap (('t' :) . show) [0..]
+    
+-- |Refreshes all entries in a type environment.
+refreshAll :: Either TypeError TyEnv -> Either TypeError TyEnv
+refreshAll env = do env <- env; mapM (withFreshNames . refresh) env
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> W Type
@@ -69,6 +86,7 @@ ftv :: Type -> [Name]
 ftv (TyCon      _) = [ ]
 ftv (TyVar      n) = [n]
 ftv (TyArr    a b) = L.union (ftv a) (ftv b)
+ftv (TySum  _ a b) = L.union (ftv a) (ftv b)
 ftv (TyProd _ a b) = L.union (ftv a) (ftv b)
   
 type TySubst = Map Name Type
@@ -77,7 +95,8 @@ type TySubst = Map Name Type
 subst :: TySubst -> Type -> Type
 subst m c@(TyCon _)    = c
 subst m v@(TyVar n)    = M.findWithDefault v n m
-subst m (TyArr    a b) = TyArr (subst m a) (subst m b)
+subst m (TyArr    a b) = TyArr    (subst m a) (subst m b)
+subst m (TySum  n a b) = TySum  n (subst m a) (subst m b)
 subst m (TyProd n a b) = TyProd n (subst m a) (subst m b)
 
 type TyEnv = Map Name Type
@@ -118,10 +137,21 @@ u t1@(TyCon a) t2@(TyCon b)
   | a == b        = return mempty
   | otherwise     = throwError (CannotUnify t1 t2)
 u (TyArr a1 b1) (TyArr a2 b2)
-                  = do
-                    s1 <- u a1 a2
-                    s2 <- u (subst s1 b1) (subst s1 b2)
-                    return (s2 <> s1)
+                  = do s1 <- u a1 a2;
+                       s2 <- u (subst s1 b1) (subst s1 b2);
+                       return (s2 <> s1)
+u t1@(TyProd n1 x1 y1) t2@(TyProd n2 x2 y2)
+                  = if n1 == n2
+                    then do s1 <- u x1 x2;
+                            s2 <- u (subst s1 y1) (subst s1 y2);
+                            return (s2 <> s1)
+                    else do throwError (CannotUnify t1 t2)
+u t1@(TySum n1 x1 y1) t2@(TySum n2 x2 y2)
+                  = if n1 == n2
+                    then do s1 <- u x1 x2;
+                            s2 <- u (subst s1 y1) (subst s1 y2);
+                            return (s2 <> s1)
+                    else do throwError (CannotUnify t1 t2)
 u t1 (TyVar n)
   | n `occurs` t1 = throwError (OccursCheck n t1)
   | otherwise     = return (M.singleton n t1)
@@ -139,6 +169,9 @@ fresh = do x <- lift supply; return (TyVar x)
 
 (~>) :: Name -> Type -> TyEnv -> TyEnv
 (~>) = M.insert
+
+(<>) :: TySubst -> TySubst -> TySubst
+(<>) s2 s1 = M.union s2 (fmap (subst s2) s1)
            
 -- |Algorithm W for type inference.
 w :: (TyEnv,Expr) -> W (Type,TySubst)
@@ -157,8 +190,7 @@ w (env,exp) = case exp of
                         (t2,s2) <- w (fmap (subst s1) env,e);
                         a  <- fresh;
                         s3 <- u (subst s2 t1) (TyArr t2 a);
-                        let u21 = fmap (subst s3) (s2<>s1);
-                        return (subst s3 a, s3<>u21)
+                        return (subst s3 a, s3<>s2<>s1)
   
   Let x e1 e2     -> do (t1,s1) <- w (env,e1);
                         (t2,s2) <- w ((x ~> t1).fmap (subst s1) $ env,e2);
@@ -171,15 +203,13 @@ w (env,exp) = case exp of
                         let g = TyArr a b;
                         (t1,s1) <- w ((f ~> g).(x ~> a) $ env,e);
                         s2 <- u t1 (subst s1 b);
-                        let u1 = fmap (subst s2) s1
-                        return (TyArr (subst (s2<>s1) a) (subst s2 t1), s2<>u1)
+                        return (TyArr (subst (s2<>s1) a) (subst s2 t1), s2<>s1)
                     
   -- * adding if-then-else constructs
                     
   ITE b e1 e2     -> do (t1,s1) <- w (env,b);
                         (t2,s2) <- w (fmap (subst s1) env,e1);
                         (t3,s3) <- w (fmap (subst (s2<>s1)) env,e2);
-                        -- TODO maybe apply subst over substs
                         s4 <- u (subst (s3<>s2) t1) (TyCon "Bool");
                         s5 <- u (subst s4 t3) (subst (s4<>s3) t2);
                         return (subst (s5<>s4) t3, s5<>s4<>s3<>s2)
@@ -189,18 +219,14 @@ w (env,exp) = case exp of
   Con n x y       -> do (t1,s1) <- w (env,x);
                         (t2,s2) <- w (fmap (subst s1) env,y);
                         return (TyProd n t1 t2, s2<>s1)
-                    
+  
   Des e1 n x y e2 -> do (t1,s1) <- w (env,e1);
-                        (TyProd m a b) <- checkType t1;
-                        checkPattern n m;
-                        (t2,s2) <- w ((y ~> b).(x ~> a).fmap (subst s1) $ env,e2);
-                        return (t2,s2<>s1)
-    where
-    checkPattern n m
-      | n == m    = return () 
-      | otherwise = throwError $ PatternError n m
-    
-    checkType ty = case ty of
-      TyProd _ _ _ -> return ty
-      _            -> throwError $ CannotDestruct ty
+                        a <- fresh;
+                        b <- fresh;
+                        s2 <- u t1 (TyProd n a b);
+                        (t3,s3) <- w ((y ~> b).(x ~> a).fmap (subst (s2<>s1)) $ env,e2);
+                        return (t3,s3<>s2<>s1)
+  
+  
+  
   

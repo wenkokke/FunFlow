@@ -11,6 +11,17 @@ import Text.ParserCombinators.UU.Utils
 import Text.ParserCombinators.UU.Idioms (iI,Ii (..))
 import Text.ParserCombinators.UU.BasicInstances (Parser,pSym)
 
+-- * Top-Level Parsers
+
+parseProg :: String -> Prog
+parseProg = runParser "stdin" pProg
+
+parseDecl :: String -> Decl
+parseDecl = runParser "stdin" pDecl
+
+parseExpr :: String -> Expr
+parseExpr = runParser "stdin" pExpr
+
 -- * Parsing the FUN language
 
 pProg :: Parser Prog
@@ -49,8 +60,8 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
   pBin = pChainl_ng (bin <$> pOper) pApp
   
 pIdent,pConst,pOper :: Parser Name
-pIdent = lexeme $ (:) <$> pLower <*> pMany pLetter
-pConst = lexeme $ (:) <$> pUpper <*> pMany pLetter
+pIdent = lexeme $ (:) <$> pLower <*> pMany (pLetter <|> pDigit)
+pConst = lexeme $ (:) <$> pUpper <*> pMany (pLetter <|> pDigit)
 pOper  = lexeme $ pSome $ pAnySym "!#$%&*+./<=>?@\\^|-~:"
 
 -- * Recognising more list structures with separators
