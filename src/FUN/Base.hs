@@ -18,7 +18,7 @@ data Lit
 data Expr
   = Lit Lit
   | Var Name
-  | Abs Name Expr
+  | Abs Label Name Expr
   | App Expr Expr
   | Bin Name Expr Expr
   | Let Name Expr Expr
@@ -30,6 +30,12 @@ data Expr
 
 type Name
   = String
+  
+type Label
+  = Integer
+  
+noLabel :: Label
+noLabel = undefined
   
 -- * Syntactic sugar for constructing complex structures
 
@@ -43,14 +49,14 @@ des e1 n (x:y:xs) e2 = Des e1 n x y e2
 
 -- |Constructs an N-ary lambda abstraction
 abs :: [Name] -> Expr -> Expr
-abs xs e = foldr Abs e xs
+abs xs e = foldr (Abs noLabel) e xs
 
 -- |Constructs an N-ary recursive lambda abstraction
 fix :: [Name] -> Expr -> Expr
 fix (f:x:xs) e = Fix f x (abs xs e)
 
 -- |Constructs a definition tuple.
-decl n xs e = Decl n (foldr Abs e xs)
+decl n xs e = Decl n (foldr (Abs noLabel) e xs)
 
 -- |Constructs let bindings with multiple definitions
 letn :: [Decl] -> Expr -> Expr

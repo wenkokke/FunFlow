@@ -182,7 +182,7 @@ w (env,exp) = case exp of
                         Just  v -> return (v,mempty)
                         Nothing -> throwError (UnboundVariable n)
   
-  Abs   x e       -> do a <- fresh;
+  Abs _ x e       -> do a <- fresh;
                         (t1,s1) <- w ((x ~> a) env,e);
                         return (TyArr (subst s1 a) t1,s1)
   
