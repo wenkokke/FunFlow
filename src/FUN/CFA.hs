@@ -21,7 +21,7 @@ import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply,supply,evalSupply)
 import Control.Monad.Trans (lift)
 
-import Data.Set ( Set, empty )
+import Data.Set ( Set, empty, singleton, union )
 import qualified Data.Set as Set
 
 -- * For Pepijn ^^
@@ -35,7 +35,7 @@ type AVar = Name
 
 data Annotation 
   = AVar AVar
-  deriving Eq
+  deriving (Eq, Ord, Show)
 data Type
   = TyCon  TVar
   | TyVar  TVar
@@ -47,10 +47,11 @@ data Type
 instance Show Type where
   show (TyCon  n    ) = n
   show (TyVar  n    ) = n
-  show (TyArr  _ a b) = printf "%s -> %s" (wrap a) (wrap b)
+  show (TyArr  r a b) = printf "%s -%s> %s" (wrap a) printAnnotation (wrap b)
     where
     wrap ty@(TyArr _ _ _) = printf "(%s)" (show ty)
     wrap ty             = show ty
+    printAnnotation = if False then "(" ++ show r ++ ")" else ""
   show (TySum n a b) = printf "%s %s %s" n (wrap a) (wrap b)
     where
     wrap ty@(TyProd _ _ _) = printf "(%s)" (show ty)
@@ -114,13 +115,16 @@ class Subst w where
 -- |Substitutes a type for a type variable in a type.
 instance Subst Type where
   subst m c@(TyCon _)    = c
-  subst (m, _) v@(TyVar n)    = M.findWithDefault v n m --TODO
-  subst m (TyArr q  a b) = TyArr  q (subst m a) (subst m b)
+  subst m v@(TyVar n)    = M.findWithDefault v n (fst m)
+  subst m (TyArr v@(AVar n)  a b) = TyArr ( M.findWithDefault v n (snd m) ) (subst m a) (subst m b)
   subst m (TySum  n a b) = TySum  n (subst m a) (subst m b)
   subst m (TyProd n a b) = TyProd n (subst m a) (subst m b)
 
 instance Subst Annotation where
-  subst = error "TODO!"
+  subst m v@(AVar n) = M.findWithDefault v n (snd m)
+  
+instance Subst (Set Constraint) where
+  subst m = error "TODO: Subst on constraint sets"
   
 type Env = Map TVar Type
 
@@ -209,10 +213,9 @@ instance Fresh Annotation where
                          )
 type Point = String
 
-type Simple = String -- Simple Annotation
-
-data Constraint = Constraint Annotation Simple
-
+data Constraint = Constraint Annotation Point
+  deriving (Eq, Ord)
+  
 ($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
 f $* a = \d -> case M.lookup a f of
                     Just b  -> pure b
@@ -232,51 +235,58 @@ cfa exp env = case exp of
                      in (env $* x) notFoundError & \v -> (v, mempty, empty)
                
   Abs   x e       -> do a_x <- fresh;
-                        (t1, s1, c1) <- cfa e . (x ~> a_x) $ env
+                        (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
                         b_0 <- fresh
-                        return (TyArr b_0 (subst s1 a_x) t1, s1, empty)
+                        let constraints = c0 `union` singleton (Constraint b_0 undefined)
+                        return (TyArr b_0 (subst s0 a_x) t0, s0, constraints)
 
   -- * adding fixpoint operators
   
   Fix f x e       -> do a_x <- fresh
                         a_0 <- fresh
                         b_0 <- fresh
-                        (t1, s1, c1) <- cfa e . (f ~> TyArr b_0 a_x a_0) . (x ~> a_x) $ env
-                        s2 <- t1 `unify` subst s1 a_0
-                        let b1 = subst (s2 <> s1) b_0 
-                        return (TyArr b1 (subst (s2 <> s1) a_x) (subst s2 t1), s2 <> s1, empty)
+                        (t0, s0, c0) <- cfa e . (f ~> TyArr b_0 a_x a_0) . (x ~> a_x) $ env
+                        s1 <- t0 `unify` subst s0 a_0
+                        let b1 = subst (s1 <> s0) b_0 
+                            constraints = subst s1 c0 `union` singleton (Constraint b1 undefined)
+                        return (TyArr b1 (subst (s1 <> s0) a_x) (subst s1 t0), s1 <> s0, constraints)
 
                         
-  App f   e       -> do (t1, s1, c) <- cfa f $ env
-                        (t2, s2, c) <- cfa e . fmap (subst s1) $ env
+  App f   e       -> do (t1, s1, c1) <- cfa f $ env
+                        (t2, s2, c2) <- cfa e . fmap (subst s1) $ env
                         a <- fresh;
                         b <- fresh
                         s3 <- subst s2 t1 `unify` TyArr b t2 a
-                        return (subst s3 a, s3 <> s2 <> s1, empty)
+                        let constraints = subst (s3 <> s2) c1 `union` subst s3 c2 
+                        return (subst s3 a, s3 <> s2 <> s1, constraints)
   
-  Let x e1 e2     -> do (t1, s1, c) <- cfa e1 $ env;
-                        (t2, s2, c) <- cfa e2 . (x ~> t1) . fmap (subst s1) $ env
-                        return (t2, s2 <> s1, empty)
+  Let x e1 e2     -> do (t1, s1, c1) <- cfa e1 $ env;
+                        (t2, s2, c2) <- cfa e2 . (x ~> t1) . fmap (subst s1) $ env
+                        let constraints = subst s2 c1 `union` c2
+                        return (t2, s2 <> s1, constraints)
 
                     
   -- * adding if-then-else constructs
                     
-  ITE b e1 e2     -> do (t1, s1, c1) <- cfa b  $ env;
-                        (t2, s2, c2) <- cfa e1 . fmap (subst s1) $ env
-                        (t3, s3, c3) <- cfa e2 . fmap (subst (s2 <> s1)) $ env
-                        s4 <- subst (s3 <> s2) t1 `unify` TyCon "Bool"
-                        s5 <- subst s4 t3 `unify` subst (s4 <> s3) t2;
-                        return (subst (s5 <> s4) t3, s5 <> s4 <> s3 <> s2, empty)
+  ITE b e1 e2     -> do (t0, s0, c0) <- cfa b  $ env;
+                        (t1, s1, c1) <- cfa e1 . fmap (subst s0) $ env
+                        (t2, s2, c2) <- cfa e2 . fmap (subst (s1 <> s0)) $ env
+                        s3 <- subst (s2 <> s1) t0 `unify` TyCon "Bool"
+                        s4 <- subst s3 t2 `unify` subst (s3 <> s2) t1;
+                        let constraints = subst (s4 <> s3 <> s2 <> s1) c0 `union` subst (s4 <> s3 <> s2) c1 `union` subst (s4 <> s3) c2
+                        return (subst (s4 <> s3) t2, s4 <> s3 <> s2 <> s1, constraints)
                     
   -- * adding product types
   
   Con n x y       -> do (t1, s1, c1) <- cfa x $ env
                         (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
-                        return (TyProd n t1 t2, s2 <> s1, empty)
+                        let constraints = empty
+                        return (TyProd n t1 t2, s2 <> s1, constraints)
   
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
                         a <- fresh
                         b <- fresh
                         s2 <- t1 `unify` TyProd n a b
                         (t3, s3, c3) <- cfa e2 . (y ~> b) . (x ~> a) . fmap (subst (s2 <> s1)) $ env
-                        return (t3, s3 <> s2 <> s1, empty)
+                        let constraints = empty
+                        return (t3, s3 <> s2 <> s1, constraints)
