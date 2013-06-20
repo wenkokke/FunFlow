@@ -198,7 +198,7 @@ w (env,exp) = case exp of
 
   -- * adding fixpoint operators
   
-  Fix f x e       -> do a <- fresh;
+  Fix _ f x e     -> do a <- fresh;
                         b <- fresh;
                         let g = TyArr a b;
                         (t1,s1) <- w ((f ~> g).(x ~> a) $ env,e);
@@ -216,7 +216,7 @@ w (env,exp) = case exp of
                     
   -- * adding product types
   
-  Con n x y       -> do (t1,s1) <- w (env,x);
+  Con _ n x y     -> do (t1,s1) <- w (env,x);
                         (t2,s2) <- w (fmap (subst s1) env,y);
                         return (TyProd n t1 t2, s2<>s1)
   

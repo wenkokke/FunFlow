@@ -22,8 +22,8 @@ data Expr
   | App Expr Expr
   | Bin Name Expr Expr
   | Let Name Expr Expr
-  | Fix Name Name Expr
-  | Con Name Expr Expr            -- ^ con constructor arg0 arg1
+  | Fix Label Name Name Expr
+  | Con Label Name Expr Expr      -- ^ con constructor arg0 arg1
   | Des Expr Name Name Name Expr  -- ^ as constructor arg0 arg1 destruct e1 in e2
   | ITE Expr Expr Expr
   deriving (Eq,Show)
@@ -41,7 +41,7 @@ noLabel = undefined
 
 -- |Constructs an N-ary cartesian product construction
 con :: Name -> [Expr] -> Expr
-con n xs = foldr1 (Con n) xs
+con n xs = foldr1 (Con noLabel n) xs
 
 -- |Constructs an N-ary cartesian product destruction
 des :: Expr -> Name -> [Name] -> Expr -> Expr
@@ -53,7 +53,7 @@ abs xs e = foldr (Abs noLabel) e xs
 
 -- |Constructs an N-ary recursive lambda abstraction
 fix :: [Name] -> Expr -> Expr
-fix (f:x:xs) e = Fix f x (abs xs e)
+fix (f:x:xs) e = Fix noLabel f x (abs xs e)
 
 -- |Constructs a definition tuple.
 decl n xs e = Decl n (foldr (Abs noLabel) e xs)

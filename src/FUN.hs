@@ -1,19 +1,33 @@
 module FUN
   ( module FUN.Base
   , module FUN.Parsing
+  , module FUN.Labeling
   , module FUN.W
   , module FUN.CFA
   ) where
 
 import FUN.Base     -- ^ abstract syntax tree
 import FUN.Parsing  -- ^ parser
+import FUN.Labeling -- ^ labeling
 import FUN.W        -- ^ type inference
 import FUN.CFA      -- ^ control flow analysis
 
 import Text.Printf (printf)
 import qualified Data.Map as M
+import Text.ParserCombinators.UU.Utils (runParser)
 
--- foldWithKey :: (k -> a -> b -> b) -> b -> Map k a -> b
+-- * Top-Level Parsers
+
+parseProg :: String -> Prog
+parseProg = runLabel . runParser "stdin" pProg
+
+parseDecl :: String -> Decl
+parseDecl = runLabel . runParser "stdin" pDecl
+
+parseExpr :: String -> Expr
+parseExpr = runLabel . runParser "stdin" pExpr
+
+-- * Example code
 
 main = either print (putStrLn . put) env
   where
@@ -21,7 +35,6 @@ main = either print (putStrLn . put) env
   put = M.foldWithKey (\k v r -> printf "%s : %s\n%s" k (show v) r) []
   env :: Either TypeError TyEnv
   env = runW examples
-
 
 examples =
   fmap parseDecl $
