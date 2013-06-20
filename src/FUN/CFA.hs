@@ -124,7 +124,9 @@ instance Subst Annotation where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
   
 instance Subst (Set Constraint) where
-  subst m = error "TODO: Subst on constraint sets"
+  subst m cs = flip Set.map cs $ \t ->
+    case t of 
+         Constraint v@(AVar n) r -> Constraint ( M.findWithDefault v n (snd m) ) r
   
 type Env = Map TVar Type
 
