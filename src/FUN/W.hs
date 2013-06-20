@@ -1,17 +1,14 @@
 module FUN.W where
 
+import Prelude hiding (mapM)
 import FUN.Base
 import Text.Printf (printf)
-
-import Prelude hiding (mapM)
-
 import Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.List as L (union)
-
 import Data.Monoid hiding ((<>))
 import Data.Traversable (forM,mapM)
-
+import Debug.Trace (trace)
 import Control.Monad (join)
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply,supply,evalSupply)
@@ -56,7 +53,7 @@ runW = refreshAll . withFreshNames . foldl addDecl (return mempty)
   where
   addDecl :: W TyEnv -> Decl-> W TyEnv
   addDecl env (Decl x e) = do env <- env;
-                              (t,_) <- w (env,e);
+                              (t,_) <- w e env;
                               return (M.insert x t env)
 
 -- |Provides an infinite stream of names to things in the @W@ monad,
@@ -174,8 +171,8 @@ fresh = do x <- lift supply; return (TyVar x)
 (<>) s2 s1 = M.union s2 (fmap (subst s2) s1)
            
 -- |Algorithm W for type inference.
-w :: (TyEnv,Expr) -> W (Type,TySubst)
-w (env,exp) = case exp of
+w :: Expr -> TyEnv -> W (Type,TySubst)
+w exp env = case exp of
   Lit l           -> return (typeOf l,mempty)
   
   Var n           -> case M.lookup n env of
@@ -183,17 +180,17 @@ w (env,exp) = case exp of
                         Nothing -> throwError (UnboundVariable n)
   
   Abs _ x e       -> do a <- fresh;
-                        (t1,s1) <- w ((x ~> a) env,e);
+                        (t1,s1) <- w e . (x ~> a) $ env;
                         return (TyArr (subst s1 a) t1,s1)
   
-  App f   e       -> do (t1,s1) <- w (env,f);
-                        (t2,s2) <- w (fmap (subst s1) env,e);
+  App f e         -> do (t1,s1) <- w f $ env;
+                        (t2,s2) <- w e . fmap (subst s1) $ env;
                         a  <- fresh;
                         s3 <- u (subst s2 t1) (TyArr t2 a);
                         return (subst s3 a, s3<>s2<>s1)
   
-  Let x e1 e2     -> do (t1,s1) <- w (env,e1);
-                        (t2,s2) <- w ((x ~> t1).fmap (subst s1) $ env,e2);
+  Let x e1 e2     -> do (t1,s1) <- w e1 $ env;
+                        (t2,s2) <- w e2 . (x ~> t1) . fmap (subst s1) $ env;
                         return (t2, s2<>s1)
 
   -- * adding fixpoint operators
@@ -201,30 +198,30 @@ w (env,exp) = case exp of
   Fix _ f x e     -> do a <- fresh;
                         b <- fresh;
                         let g = TyArr a b;
-                        (t1,s1) <- w ((f ~> g).(x ~> a) $ env,e);
+                        (t1,s1) <- w e . (f ~> g) . (x ~> a) $ env;
                         s2 <- u t1 (subst s1 b);
                         return (TyArr (subst (s2<>s1) a) (subst s2 t1), s2<>s1)
                     
   -- * adding if-then-else constructs
                     
-  ITE b e1 e2     -> do (t1,s1) <- w (env,b);
-                        (t2,s2) <- w (fmap (subst s1) env,e1);
-                        (t3,s3) <- w (fmap (subst (s2<>s1)) env,e2);
+  ITE b e1 e2     -> do (t1,s1) <- w b  $ env;
+                        (t2,s2) <- w e1 . fmap (subst s1) $ env;
+                        (t3,s3) <- w e2 . fmap (subst (s2<>s1)) $ env;
                         s4 <- u (subst (s3<>s2) t1) (TyCon "Bool");
                         s5 <- u (subst s4 t3) (subst (s4<>s3) t2);
                         return (subst (s5<>s4) t3, s5<>s4<>s3<>s2)
                     
   -- * adding product types
   
-  Con _ n x y     -> do (t1,s1) <- w (env,x);
-                        (t2,s2) <- w (fmap (subst s1) env,y);
-                        return (TyProd n t1 t2, s2<>s1)
+  Con _ n x y     -> do (t1,s1) <- w x $ env;
+                        (t2,s2) <- w y . fmap (subst s1) $ env;
+                        return (TyProd n (subst s2 t1) t2, s2<>s1)
   
-  Des e1 n x y e2 -> do (t1,s1) <- w (env,e1);
+  Des e1 n x y e2 -> do (t1,s1) <- w e1 $ env;
                         a <- fresh;
                         b <- fresh;
                         s2 <- u t1 (TyProd n a b);
-                        (t3,s3) <- w ((y ~> b).(x ~> a).fmap (subst (s2<>s1)) $ env,e2);
+                        (t3,s3) <- w e2 . (y ~> b) . (x ~> a) . fmap (subst (s2<>s1)) $ env;
                         return (t3,s3<>s2<>s1)
   
   

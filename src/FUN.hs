@@ -4,10 +4,11 @@ module FUN
   , module FUN.CFA
   ) where
 
-import FUN.Base     -- ^ abstract syntax tree
-import FUN.Parsing  -- ^ parser
-import FUN.Labeling -- ^ labeling
-import FUN.CFA      -- ^ control flow analysis
+import FUN.Base                         -- ^ abstract syntax tree
+import FUN.Parsing                      -- ^ parser
+import FUN.Labeling                     -- ^ labeling
+import FUN.W (runW)                     -- ^ type inference
+import FUN.CFA (runCFA,TypeError,TyEnv) -- ^ control flow analysis
 
 import Text.Printf (printf)
 import qualified Data.Map as M
@@ -26,25 +27,25 @@ parseExpr = runLabel . runParser "stdin" pExpr
 
 -- * Example code
 
---main = either print (putStrLn . put) env
---  where
---  put :: TyEnv -> String
---  put = M.foldWithKey (\k v r -> printf "%s : %s\n%s" k (show v) r) []
---  env :: Either TypeError TyEnv
---  env = runCFA examples
-
-examples =
+main = either print (putStrLn . put) env
+  where
+  put :: TyEnv -> String
+  put = M.foldWithKey (\k v r -> printf "%s : %s\n%s" k (show v) r) []
+  env :: Either TypeError TyEnv
+  env = runCFA ex1
+  
+ex1 =
   fmap parseDecl $
   [ "apply f x = f x"
 
   , "compose f g x = f (g x)"
   , "id x = x"
 
-  , "lmap f p = case p of Pair (x, y) in Pair (f x, y)"
-  , "rmap g p = case p of Pair (x, y) in Pair (x, g y)"
-  , "bimap f g = compose (lmap f) (rmap g)"
+  , "mapFst f p = case p of Pair (x, y) in Pair (f x, y)"
+  , "mapSnd g p = case p of Pair (x, y) in Pair (x, g y)"
+  , "mapPair f g = compose (mapFst f) (mapSnd g)"
 
-  , "curry f = fun x y => let p = Pair (x, y) in f p"
+  , "curry f   = fun x y => let p = Pair (x, y) in f p"
   , "uncurry f = fun p => case p of Pair (x, y) in f x y"
 
   , "pair x y = Pair (x,y)"
@@ -63,7 +64,7 @@ examples =
   , "silly2 p = compose (fst p) (snd p)"
   , "silly3 p x = apply (compose (fst p) (snd p)) (id x)"
 
-  , "idB = compose curry uncurry" 
-  , "idP = fun p => Pair (fst p, snd p)" 
-  , "idR = compose uncurry curry"
+  , "idPair p = Pair(fst p, snd p)" 
+  , "idCurry1 = compose curry uncurry" 
+  , "idCurry2 = compose uncurry curry"
   ]

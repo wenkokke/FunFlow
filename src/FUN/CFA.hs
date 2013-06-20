@@ -223,10 +223,10 @@ f $* a = \d -> case M.lookup a f of
                     Just b  -> pure b
                     Nothing -> d
 
-(&) :: Functor f => f a -> (a -> b) -> f b
-(&) = flip fmap
+(<&>) :: Functor f => f a -> (a -> b) -> f b
+(<&>) = flip fmap
 
-infixr 1 &
+infixr 1 <&>
 
 -- |Algorithm W for type inference.
 cfa :: Expr -> Env -> W (Type, TySubst, Set Constraint)
@@ -234,7 +234,7 @@ cfa exp env = case exp of
   Lit l           -> return (typeOf l, mempty, empty)
   
   Var x           -> let notFoundError = throwError (UnboundVariable x)
-                     in (env $* x) notFoundError & \v -> (v, mempty, empty)
+                     in (env $* x) notFoundError <&> \v -> (v, mempty, empty)
                
   Abs _ x e       -> do a_x <- fresh;
                         (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
@@ -283,7 +283,7 @@ cfa exp env = case exp of
   Con _ n x y     -> do (t1, s1, c1) <- cfa x $ env
                         (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
                         let constraints = empty
-                        return (TyProd n t1 t2, s2 <> s1, constraints)
+                        return (TyProd n (subst s2 t1) t2, s2 <> s1, constraints)
   
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
                         a <- fresh

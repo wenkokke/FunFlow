@@ -49,9 +49,12 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes) <<|> pBin
   pBin = pChainl_ng (bin <$> pOper) pApp
   
 pIdent,pConst,pOper :: Parser Name
-pIdent = lexeme $ (:) <$> pLower <*> pMany (pLetter <|> pDigit)
-pConst = lexeme $ (:) <$> pUpper <*> pMany (pLetter <|> pDigit)
+pIdent = lexeme $ (:) <$> pLower <*> pMany (pLetter <|> pDigit <|> pUnderscore)
+pConst = lexeme $ (:) <$> pUpper <*> pMany (pLetter <|> pDigit <|> pUnderscore)
 pOper  = lexeme $ pSome $ pAnySym "!#$%&*+./<=>?@\\^|-~:"
+
+pUnderscore :: Parser Char
+pUnderscore = pSym '_'
 
 -- * Recognising more list structures with separators
 
