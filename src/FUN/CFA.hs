@@ -18,7 +18,7 @@ import Control.Monad (join)
 import Control.Applicative hiding (empty)
 
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
-import Control.Monad.Supply (Supply,supply,evalSupply)
+import Control.Monad.Supply (Supply, SupplyT, supply, evalSupply, evalSupplyT)
 import Control.Monad.Trans (lift)
 
 import Data.Set ( Set, empty, singleton, union )
@@ -86,13 +86,14 @@ runCFA = refreshAll . withFreshTVars . foldl addDecl (return (mempty, empty))
 -- |Provides an infinite stream of names to things in the @W@ monad,
 --  reducing it to just an @Either@ value containing perhaps a TypeError.
 withFreshTVars :: W a -> Either TypeError a
-withFreshTVars x = evalSupply (runErrorT x) freshTVars
+withFreshTVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
   where
   freshTVars = letters ++ numbers
     where
     letters = fmap (: []) ['a'..'z']
     numbers = fmap (('t' :) . show) [0..]
-    
+  freshAVars = fmap (show) [0..]
+
 -- |Refreshes all entries in a type environment.
 refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
 refreshAll env = do (env, c) <- env;
@@ -162,7 +163,7 @@ instance Show TypeError where
   show (OtherError     msg) = msg
   show (NoMsg             ) = "nope"
 
-type W a = ErrorT TypeError (Supply TVar) a
+type W a = ErrorT TypeError (SupplyT AVar (Supply TVar)) a
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: TVar -> Type -> Bool
@@ -206,7 +207,7 @@ class Fresh t where
   fresh :: W t
 
 instance Fresh Type where
-  fresh = fmap TyVar $ lift supply
+  fresh = fmap TyVar $ lift (lift supply)
 
 
 instance Fresh Annotation where
