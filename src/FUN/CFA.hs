@@ -76,7 +76,7 @@ showType cp = let
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
 runCFA :: [Decl] -> Either TypeError (Env, Set Constraint)
-runCFA = refreshAll . withFreshTVars . foldl addDecl (return (mempty, empty))
+runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
   where
   addDecl :: W (Env, Set Constraint) -> Decl-> W (Env, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r;
@@ -85,8 +85,8 @@ runCFA = refreshAll . withFreshTVars . foldl addDecl (return (mempty, empty))
 
 -- |Provides an infinite stream of names to things in the @W@ monad,
 --  reducing it to just an @Either@ value containing perhaps a TypeError.
-withFreshTVars :: W a -> Either TypeError a
-withFreshTVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
+withFreshVars :: W a -> Either TypeError a
+withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
   where
   freshTVars = letters ++ numbers
     where
@@ -97,7 +97,7 @@ withFreshTVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
 -- |Refreshes all entries in a type environment.
 refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
 refreshAll env = do (env, c) <- env;
-                    env <- mapM (withFreshTVars . refresh) env
+                    env <- mapM (withFreshVars . refresh) env
                     return (env, c {- TODO: refresh constraint sets, if needed? -} ) 
 
 -- |Replaces every type variable with a fresh one.

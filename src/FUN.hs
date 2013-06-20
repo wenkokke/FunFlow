@@ -34,7 +34,8 @@ main = either print (putStrLn . put) env
   showAnns = True {- True = print annotation variables, False = just print inferred types -}
     
   put :: (TyEnv, S.Set Constraint) -> String
-  put (m, w) =  let typeList = M.foldWithKey (\k v r -> printf "%s : %s\n%s" k (showType showAnns v) r) [] m
+  put (m, w) =  let typePrinter = \k v r -> printf "%s : %s\n%s" k (showType showAnns v) r
+                    typeList = M.foldWithKey typePrinter [] m
                     annList = "\n" ++ S.fold (\x xs -> show x ++ "\n" ++ xs) "" w
                 in typeList ++ (if showAnns then annList else "")
   env :: Either TypeError (TyEnv, S.Set Constraint)
