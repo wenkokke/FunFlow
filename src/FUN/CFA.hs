@@ -15,7 +15,7 @@ import Data.Monoid hiding ((<>))
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join)
-import Control.Applicative hiding ( empty )
+import Control.Applicative hiding (empty)
 
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply,supply,evalSupply)
@@ -161,34 +161,34 @@ occurs :: TVar -> Type -> Bool
 occurs n t = n `elem` (ftv t)
 
 -- |Unification as per Robinson's unification algorithm.
-unify :: Type -> Type -> W TySubst
-unify t1@(TyCon a) t2@(TyCon b)
+u :: Type -> Type -> W TySubst
+u t1@(TyCon a) t2@(TyCon b)
   | a == b        = return mempty
   | otherwise     = throwError (CannotUnify t1 t2)
-unify (TyArr (AVar p1) a1 b1) (TyArr p2 a2 b2)
+u (TyArr (AVar p1) a1 b1) (TyArr p2 a2 b2)
                   = do let s0 = (M.empty, M.singleton p1 p2)
-                       s1 <- subst s0 a1 `unify` subst s0 a2
-                       s2 <- subst (s1 <> s0) b1 `unify` subst (s1 <> s0) b2
+                       s1 <- subst s0 a1 `u` subst s0 a2
+                       s2 <- subst (s1 <> s0) b1 `u` subst (s1 <> s0) b2
                        return (s2 <> s1 <> s0)
-unify t1@(TyProd n1 x1 y1) t2@(TyProd n2 x2 y2) =
-                    if n1 == n2
-                    then do s1 <- x1 `unify` x2;
-                            s2 <- subst s1 y1 `unify` subst s1 y2
-                            return (s2 <> s1)
-                    else do throwError (CannotUnify t1 t2)
-unify t1@(TySum n1 x1 y1) t2@(TySum n2 x2 y2)
+u t1@(TyProd n1 x1 y1) t2@(TyProd n2 x2 y2)
                   = if n1 == n2
-                    then do s1 <- x1 `unify` x2;
-                            s2 <- subst s1 y1 `unify` subst s1 y2
+                    then do s1 <- x1 `u` x2;
+                            s2 <- subst s1 y1 `u` subst s1 y2
                             return (s2 <> s1)
                     else do throwError (CannotUnify t1 t2)
-unify t1 (TyVar n)
+u t1@(TySum n1 x1 y1) t2@(TySum n2 x2 y2)
+                  = if n1 == n2
+                    then do s1 <- x1 `u` x2;
+                            s2 <- subst s1 y1 `u` subst s1 y2
+                            return (s2 <> s1)
+                    else do throwError (CannotUnify t1 t2)
+u t1 (TyVar n)
   | n `occurs` t1 = throwError (OccursCheck n t1)
   | otherwise     = return (M.singleton n t1, M.empty)
-unify (TyVar n) t2
+u (TyVar n) t2
   | n `occurs` t2 = throwError (OccursCheck n t2)
   | otherwise     = return (M.singleton n t2, M.empty)
-unify t1 t2           = throwError (CannotUnify t1 t2)
+u t1 t2           = throwError (CannotUnify t1 t2)
 
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TyCon "Bool"
@@ -236,7 +236,7 @@ cfa exp env = case exp of
   Var x           -> let notFoundError = throwError (UnboundVariable x)
                      in (env $* x) notFoundError & \v -> (v, mempty, empty)
                
-  Abs   x e       -> do a_x <- fresh;
+  Abs _ x e       -> do a_x <- fresh;
                         (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
                         b_0 <- fresh
                         let constraints = c0 `union` singleton (Constraint b_0 undefined)
@@ -244,21 +244,21 @@ cfa exp env = case exp of
 
   -- * adding fixpoint operators
   
-  Fix f x e       -> do a_x <- fresh
+  Fix _ f x e     -> do a_x <- fresh
                         a_0 <- fresh
                         b_0 <- fresh
                         (t0, s0, c0) <- cfa e . (f ~> TyArr b_0 a_x a_0) . (x ~> a_x) $ env
-                        s1 <- t0 `unify` subst s0 a_0
+                        s1 <- t0 `u` subst s0 a_0
                         let b1 = subst (s1 <> s0) b_0 
                             constraints = subst s1 c0 `union` singleton (Constraint b1 undefined)
                         return (TyArr b1 (subst (s1 <> s0) a_x) (subst s1 t0), s1 <> s0, constraints)
 
                         
-  App f   e       -> do (t1, s1, c1) <- cfa f $ env
+  App f e         -> do (t1, s1, c1) <- cfa f $ env
                         (t2, s2, c2) <- cfa e . fmap (subst s1) $ env
                         a <- fresh;
                         b <- fresh
-                        s3 <- subst s2 t1 `unify` TyArr b t2 a
+                        s3 <- subst s2 t1 `u` TyArr b t2 a
                         let constraints = subst (s3 <> s2) c1 `union` subst s3 c2 
                         return (subst s3 a, s3 <> s2 <> s1, constraints)
   
@@ -273,14 +273,14 @@ cfa exp env = case exp of
   ITE b e1 e2     -> do (t0, s0, c0) <- cfa b  $ env;
                         (t1, s1, c1) <- cfa e1 . fmap (subst s0) $ env
                         (t2, s2, c2) <- cfa e2 . fmap (subst (s1 <> s0)) $ env
-                        s3 <- subst (s2 <> s1) t0 `unify` TyCon "Bool"
-                        s4 <- subst s3 t2 `unify` subst (s3 <> s2) t1;
+                        s3 <- subst (s2 <> s1) t0 `u` TyCon "Bool"
+                        s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
                         let constraints = subst (s4 <> s3 <> s2 <> s1) c0 `union` subst (s4 <> s3 <> s2) c1 `union` subst (s4 <> s3) c2
                         return (subst (s4 <> s3) t2, s4 <> s3 <> s2 <> s1, constraints)
                     
   -- * adding product types
   
-  Con n x y       -> do (t1, s1, c1) <- cfa x $ env
+  Con _ n x y     -> do (t1, s1, c1) <- cfa x $ env
                         (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
                         let constraints = empty
                         return (TyProd n t1 t2, s2 <> s1, constraints)
@@ -288,7 +288,7 @@ cfa exp env = case exp of
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
                         a <- fresh
                         b <- fresh
-                        s2 <- t1 `unify` TyProd n a b
+                        s2 <- t1 `u` TyProd n a b
                         (t3, s3, c3) <- cfa e2 . (y ~> b) . (x ~> a) . fmap (subst (s2 <> s1)) $ env
                         let constraints = empty
                         return (t3, s3 <> s2 <> s1, constraints)

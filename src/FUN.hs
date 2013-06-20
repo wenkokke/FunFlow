@@ -1,15 +1,13 @@
 module FUN
   ( module FUN.Base
   , module FUN.Parsing
-  , module FUN.W
---  , module FUN.CFA
+  , module FUN.CFA
   ) where
 
 import FUN.Base     -- ^ abstract syntax tree
 import FUN.Parsing  -- ^ parser
 import FUN.Labeling -- ^ labeling
-import FUN.W        -- ^ type inference
---import FUN.CFA      -- ^ control flow analysis
+import FUN.CFA      -- ^ control flow analysis
 
 import Text.Printf (printf)
 import qualified Data.Map as M
