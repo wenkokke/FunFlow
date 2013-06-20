@@ -43,39 +43,45 @@ data Type
   | TySum  TVar Type Type
   | TyProd TVar Type Type
   deriving (Eq)
-  
-instance Show Type where
-  show (TyCon  n    ) = n
-  show (TyVar  n    ) = n
-  show (TyArr  r a b) = printf "%s -%s> %s" (wrap a) printAnnotation (wrap b)
-    where
-    wrap ty@(TyArr _ _ _) = printf "(%s)" (show ty)
-    wrap ty             = show ty
-    printAnnotation = if False then "(" ++ show r ++ ")" else ""
-  show (TySum n a b) = printf "%s %s %s" n (wrap a) (wrap b)
-    where
-    wrap ty@(TyProd _ _ _) = printf "(%s)" (show ty)
-    wrap ty@(TySum  _ _ _) = printf "(%s)" (show ty)
-    wrap ty@(TyArr _ _ _)   = printf "(%s)" (show ty)
-    wrap ty                = show ty
-  show (TyProd n a b) = printf "%s %s %s" n (wrap a) (wrap b)
-    where
-    wrap ty@(TyProd _ _ _) = printf "(%s)" (show ty)
-    wrap ty@(TySum  _ _ _) = printf "(%s)" (show ty)
-    wrap ty@(TyArr _ _ _)  = printf "(%s)" (show ty)
-    wrap ty                = show ty
     
+instance Show Type where
+  show = showType False
+
+showType :: Bool -> Type -> String
+showType cp = let 
+  showType' ty = 
+    case ty of 
+      (TyCon  n    ) -> n
+      (TyVar  n    ) -> n
+      (TyArr  r a b) -> printf "%s -%s> %s" (wrap a) (printAnnotation r) (wrap b)
+          where
+          wrap ty@(TyArr _ _ _) = printf "(%s)" (showType' ty)
+          wrap ty             = showType' ty
+          printAnnotation (AVar s) = if cp then "(" ++ s ++ ")" else ""
+      (TySum n a b) -> printf "%s %s %s" n (wrap a) (wrap b)
+          where
+          wrap ty@(TyProd _ _ _) = printf "(%s)" (showType' ty)
+          wrap ty@(TySum  _ _ _) = printf "(%s)" (showType' ty)
+          wrap ty@(TyArr _ _ _)  = printf "(%s)" (showType' ty)
+          wrap ty                = showType' ty
+      (TyProd n a b) -> printf "%s %s %s" n (wrap a) (wrap b)
+          where
+          wrap ty@(TyProd _ _ _) = printf "(%s)" (showType' ty)
+          wrap ty@(TySum  _ _ _) = printf "(%s)" (showType' ty)
+          wrap ty@(TyArr _ _ _)  = printf "(%s)" (showType' ty)
+          wrap ty                = showType' ty
+ in showType' 
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
-runCFA :: [Decl] -> Either TypeError Env
-runCFA = refreshAll . withFreshTVars . foldl addDecl (return mempty)
+runCFA :: [Decl] -> Either TypeError (Env, Set Constraint)
+runCFA = refreshAll . withFreshTVars . foldl addDecl (return (mempty, empty))
   where
-  addDecl :: W Env -> Decl-> W Env
-  addDecl env (Decl x e) = do env <- env;
-                              (t,_, _) <- cfa e $ env
-                              return (M.insert x t env)
+  addDecl :: W (Env, Set Constraint) -> Decl-> W (Env, Set Constraint)
+  addDecl r (Decl x e) = do (env, c0) <- r;
+                            (t, _, c1) <- cfa e $ env
+                            return (M.insert x t env, c0 `union` c1)
 
 -- |Provides an infinite stream of names to things in the @W@ monad,
 --  reducing it to just an @Either@ value containing perhaps a TypeError.
@@ -88,8 +94,10 @@ withFreshTVars x = evalSupply (runErrorT x) freshTVars
     numbers = fmap (('t' :) . show) [0..]
     
 -- |Refreshes all entries in a type environment.
-refreshAll :: Either TypeError Env -> Either TypeError Env
-refreshAll env = do env <- env; mapM (withFreshTVars . refresh) env
+refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
+refreshAll env = do (env, c) <- env;
+                    env <- mapM (withFreshTVars . refresh) env
+                    return (env, c {- TODO: refresh constraint sets, if needed? -} ) 
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> W Type
@@ -198,11 +206,11 @@ class Fresh t where
   fresh :: W t
 
 instance Fresh Type where
-  fresh = fmap (\t -> TyVar t) $ lift supply
+  fresh = fmap TyVar $ lift supply
 
 
 instance Fresh Annotation where
-  fresh = fmap (\t -> AVar $ '%' : t) $ lift supply
+  fresh = fmap AVar $ lift supply
 
 
 
@@ -213,10 +221,9 @@ instance Fresh Annotation where
 (<>) (s2, a2) (s1, a1) = ( M.union s2 (fmap (subst (s2, M.empty)) s1)
                          , M.union a2 a1 {- is this enough? -}
                          )
-type Point = String
 
-data Constraint = Constraint Annotation Point
-  deriving (Eq, Ord)
+data Constraint = Constraint Annotation Label
+  deriving (Eq, Ord, Show)
   
 ($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
 f $* a = \d -> case M.lookup a f of
@@ -236,21 +243,21 @@ cfa exp env = case exp of
   Var x           -> let notFoundError = throwError (UnboundVariable x)
                      in (env $* x) notFoundError <&> \v -> (v, mempty, empty)
                
-  Abs _ x e       -> do a_x <- fresh;
+  Abs p x e       -> do a_x <- fresh;
                         (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
                         b_0 <- fresh
-                        let constraints = c0 `union` singleton (Constraint b_0 undefined)
+                        let constraints = c0 `union` singleton (Constraint b_0 p)
                         return (TyArr b_0 (subst s0 a_x) t0, s0, constraints)
 
   -- * adding fixpoint operators
   
-  Fix _ f x e     -> do a_x <- fresh
+  Fix p f x e     -> do a_x <- fresh
                         a_0 <- fresh
                         b_0 <- fresh
                         (t0, s0, c0) <- cfa e . (f ~> TyArr b_0 a_x a_0) . (x ~> a_x) $ env
                         s1 <- t0 `u` subst s0 a_0
                         let b1 = subst (s1 <> s0) b_0 
-                            constraints = subst s1 c0 `union` singleton (Constraint b1 undefined)
+                            constraints = subst s1 c0 `union` singleton (Constraint b1 p)
                         return (TyArr b1 (subst (s1 <> s0) a_x) (subst s1 t0), s1 <> s0, constraints)
 
                         

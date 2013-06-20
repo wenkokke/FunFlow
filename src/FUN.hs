@@ -8,10 +8,11 @@ import FUN.Base                         -- ^ abstract syntax tree
 import FUN.Parsing                      -- ^ parser
 import FUN.Labeling                     -- ^ labeling
 import FUN.W (runW)                     -- ^ type inference
-import FUN.CFA (runCFA,TypeError,TyEnv) -- ^ control flow analysis
+import FUN.CFA (runCFA,TypeError,TyEnv, Constraint, showType) -- ^ control flow analysis
 
 import Text.Printf (printf)
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Text.ParserCombinators.UU.Utils (runParser)
 
 -- * Top-Level Parsers
@@ -27,11 +28,16 @@ parseExpr = runLabel . runParser "stdin" pExpr
 
 -- * Example code
 
+main :: IO ()
 main = either print (putStrLn . put) env
   where
-  put :: TyEnv -> String
-  put = M.foldWithKey (\k v r -> printf "%s : %s\n%s" k (show v) r) []
-  env :: Either TypeError TyEnv
+  showAnns = True {- True = print annotation variables, False = just print inferred types -}
+    
+  put :: (TyEnv, S.Set Constraint) -> String
+  put (m, w) =  let typeList = M.foldWithKey (\k v r -> printf "%s : %s\n%s" k (showType showAnns v) r) [] m
+                    annList = "\n" ++ S.fold (\x xs -> show x ++ "\n" ++ xs) "" w
+                in typeList ++ (if showAnns then annList else "")
+  env :: Either TypeError (TyEnv, S.Set Constraint)
   env = runCFA ex1
   
 ex1 =
