@@ -43,7 +43,7 @@ main = either print (putStrLn . put) env
   env = runCFA ex1
   
 ex1 =
-  fmap parseDecl $
+  runLabel . fmap parseDecl $
   [ "apply f x = f x"
 
   , "compose f g x = f (g x)"

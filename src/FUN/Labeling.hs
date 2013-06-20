@@ -7,9 +7,12 @@ class Labelable a where
   label :: a -> Supply Label a
   runLabel :: a -> a
   runLabel a = evalSupply (label a) [0..]
+
+instance (Labelable a) => (Labelable [a]) where
+  label = mapM label
   
 instance Labelable Prog where
-  label (Prog ds) = do ds <- mapM label ds; return (Prog ds)
+  label (Prog ds) = do ds <- label ds; return (Prog ds)
   
 instance Labelable Decl where
   label (Decl n e) = do e <- label e; return (Decl n e)
