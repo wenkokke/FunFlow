@@ -47,7 +47,7 @@ instance Show Type where
 
 showType :: Bool -> Type -> String
 showType cp = 
-  let printAnn (AVar s) = if cp then "[" ++ s ++ "]" else ""
+  let printAnn (AVar s) = if cp then "{" ++ s ++ "}" else ""
       showType ty = case ty of 
         TCon  n     -> n
         TVar  n     -> n

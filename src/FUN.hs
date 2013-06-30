@@ -33,7 +33,7 @@ parseExpr = runParser "stdin" pExpr
 
 printProgram :: [Decl] -> M.Map TVar Type -> String
 printProgram p env = 
-  let annotations = True
+  let annotations = False
       
       funcType (Decl nm e) = case M.lookup nm env of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
