@@ -102,8 +102,8 @@ exFunction =
   , "bind w = fun f a => case a of Pair (x, v) in case f v of Pair (y, b) in Pair (w x y, b)" 
   ]
 
-ex1 = runLabel . fmap parseDecl $
-  if True then
+exLoop = runLabel . fmap parseDecl $
+  if False then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
@@ -112,5 +112,5 @@ ex1 = runLabel . fmap parseDecl $
   [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
   ]
   
-  
+ex1 = exLoop
   

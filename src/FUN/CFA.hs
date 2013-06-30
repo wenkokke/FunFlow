@@ -261,8 +261,10 @@ cfa exp env = case exp of
   Abs p x e       -> do a_x <- fresh;
                         (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
                         b_0 <- fresh
-                        let constraints = c0 `union` constraint b_0 p
-                        return (TArr b_0 (subst s0 a_x) t0, s0, constraints)
+                        return ( TArr b_0 (subst s0 a_x) t0
+                               , s0
+                               , c0 `union` constraint b_0 p
+                               )
 
   -- * adding fixpoint operators
   
@@ -272,8 +274,10 @@ cfa exp env = case exp of
                         (t0, s0, c0) <- cfa e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
                         s1 <- t0 `u` subst s0 a_0
                         let b_1 = subst (s1 <> s0) b_0 
-                            constraints = subst s1 c0 `union` constraint b_1 p
-                        return (TArr b_1 (subst (s1 <> s0) a_x) (subst s1 t0), s1 <> s0, constraints)
+                        return ( TArr b_1 (subst (s1 <> s0) a_x) (subst s1 t0)
+                               , s1 <> s0
+                               , subst s1 c0 `union` constraint b_1 p
+                               )
 
                         
   App f e         -> do (t1, s1, c1) <- cfa f $ env
@@ -281,15 +285,20 @@ cfa exp env = case exp of
                         a <- fresh;
                         b <- fresh
                         s3 <- subst s2 t1 `u` TArr b t2 a
-                        let constraints = subst (s3 <> s2) c1 `union` 
-                                          subst  s3        c2 
-                        return (subst s3 a, s3 <> s2 <> s1, constraints)
+
+                        return ( subst s3 a 
+                               , s3 <> s2 <> s1
+                               , subst (s3 <> s2) c1 `union` 
+                                 subst  s3        c2
+                               )
   
   Let x e1 e2     -> do (t1, s1, c1) <- cfa e1 $ env;
                         (t2, s2, c2) <- cfa e2 . (x ~> t1) . fmap (subst s1) $ env
-                        let constraints = subst s2 c1 `union` 
-                                                   c2
-                        return (t2, s2 <> s1, constraints)
+
+                        return ( t2
+                               , s2 <> s1
+                               , subst s2 c1 `union` c2
+                               )
 
                     
   -- * adding if-then-else constructs
@@ -299,22 +308,31 @@ cfa exp env = case exp of
                         (t2, s2, c2) <- cfa e2 . fmap (subst (s1 <> s0)) $ env
                         s3 <- subst (s2 <> s1) t0 `u` TCon "Bool"
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
-                        let constraints = subst (s4 <> s3 <> s2 <> s1) c0 `union` 
-                                          subst (s4 <> s3 <> s2)       c1 `union` 
-                                          subst (s4 <> s3)             c2
-                        return (subst (s4 <> s3) t2, s4 <> s3 <> s2 <> s1, constraints)
+
+                        return ( subst (s4 <> s3) t2
+                               , s4 <> s3 <> s2 <> s1 
+                               , subst (s4 <> s3 <> s2 <> s1) c0 `union` 
+                                 subst (s4 <> s3 <> s2)       c1 `union` 
+                                 subst (s4 <> s3)             c2
+                               )
                     
   -- * adding product types
   
   Con _ n x y     -> do (t1, s1, c1) <- cfa x $ env
                         (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
-                        let constraints = empty
-                        return (TProd n (subst s2 t1) t2, s2 <> s1, constraints)
+ 
+                        return ( TProd n (subst s2 t1) t2
+                               , s2 <> s1
+                               , empty
+                               )
   
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
                         a <- fresh
                         b <- fresh
                         s2 <- t1 `u` TProd n a b
                         (t3, s3, c3) <- cfa e2 . (y ~> b) . (x ~> a) . fmap (subst (s2 <> s1)) $ env
-                        let constraints = empty
-                        return (t3, s3 <> s2 <> s1, constraints)
+
+                        return ( t3
+                               , s3 <> s2 <> s1
+                               , empty
+                               )
