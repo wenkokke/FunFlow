@@ -79,7 +79,10 @@ runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
   addDecl :: CFA (TyEnv, Set Constraint) -> Decl-> CFA (TyEnv, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r
                             (t, s1, c1) <- cfa e $ env
-                            return (M.insert x t env, subst s1 c0 `union` c1)
+                            let s2 = (M.empty, snd s1) 
+                            return ( M.insert x t . fmap (subst s2) $ env
+                                   , subst s1 c0 `union` c1
+                                   )
 
 
 -- |Provides an infinite stream of names to things in the @CFA@ monad,
@@ -97,14 +100,14 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
 refreshAll :: Either TypeError (TyEnv, Set Constraint) -> Either TypeError (TyEnv, Set Constraint)
 refreshAll env = do (env, c) <- env;
                     env <- mapM (withFreshVars . refresh) env
-                    return (env, c {- TODO: refresh constraint sets, if needed? -} ) 
+                    return (env, c) 
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> CFA Type
 refresh t1 = do subs <- forM (ftv t1) $ \a ->
                           do b <- fresh;
                              return (M.singleton a b, M.empty)
-                return (subst (mconcat subs) t1)
+                return $ subst (mconcat subs) t1
 
 -- |Returns the set of free type variables in a type.
 ftv :: Type -> [TVar]
@@ -113,6 +116,15 @@ ftv (TVar      n) = [n]
 ftv (TArr  _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ a b) = L.union (ftv a) (ftv b)
 ftv (TProd _ a b) = L.union (ftv a) (ftv b)
+
+-- |Returns the set of free type variables in a type.
+fav :: Type -> [AVar]
+fav (TCon      _) = [ ]
+fav (TVar      _) = [ ]
+fav (TArr  l a b) = fav a `L.union` fav b `L.union` [case l of (AVar r) -> r]
+fav (TSum  _ a b) = fav a `L.union` fav b
+fav (TProd _ a b) = fav a `L.union` fav b
+
 
 type TyEnv = Map TVar Type
 type AnnEnv = Map TVar Ann

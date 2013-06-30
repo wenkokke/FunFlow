@@ -38,7 +38,7 @@ type Label
   = String
   
 noLabel :: Label
-noLabel = undefined
+noLabel = ""
   
 -- * Syntactic sugar for constructing complex structures
 

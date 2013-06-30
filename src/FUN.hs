@@ -90,8 +90,7 @@ exId = fmap parseDecl $
   , "idCurry2 = compose uncurry curry"
   ]
   
-exFunction =
-  fmap parseDecl $
+exFunction = fmap parseDecl $
   [ "apply f x = f x"
   
   , "const x y = x"
@@ -108,7 +107,7 @@ exSilly = fmap parseDecl $
 
   
 exLoop = fmap parseDecl $
-  if False then
+  if True then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
@@ -117,7 +116,7 @@ exLoop = fmap parseDecl $
   [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
   ]
   
-exUnion = runLabel . concat $
+exUnion = concat $
   [ exCategory
   , exPair
   , exCurry 
@@ -128,5 +127,5 @@ exUnion = runLabel . concat $
   , exSilly
   ]
   
-ex1 = exUnion
+ex1 = runLabel $ exUnion
   
