@@ -25,8 +25,6 @@ import Control.Monad.Trans (lift)
 import Data.Set ( Set, empty, singleton, union )
 import qualified Data.Set as Set
 
--- * For Pepijn ^^
-
 -- * Type definitions
 
 type TVar = Name
