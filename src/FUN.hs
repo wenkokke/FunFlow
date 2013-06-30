@@ -21,13 +21,13 @@ import Text.ParserCombinators.UU.Utils (runParser)
 -- * Top-Level Parsers
 
 parseProg :: String -> Prog
-parseProg = runLabel . runParser "stdin" pProg
+parseProg = runParser "stdin" pProg
 
 parseDecl :: String -> Decl
-parseDecl = runLabel . runParser "stdin" pDecl
+parseDecl = runParser "stdin" pDecl
 
 parseExpr :: String -> Expr
-parseExpr = runLabel . runParser "stdin" pExpr
+parseExpr = runParser "stdin" pExpr
 
 -- * Example code
 
@@ -56,37 +56,37 @@ main =
       env = runCFA program
   in either print (putStrLn . put) env
         
-exCategory = runLabel . fmap parseDecl $
+exCategory = fmap parseDecl $
   [ "compose f g x = f (g x)"
   , "id x = x"
   ]
 
-exPair = runLabel . fmap parseDecl $
+exPair = fmap parseDecl $
   [ "pair x y = Pair (x,y)"
   , "fst p = case p of Pair(x,y) in x"
   , "snd p = case p of Pair(x,y) in y"
   , "swap p = case p of Pair (x, y) in Pair (y, x)"
   ]
 
-exCurry = runLabel . fmap parseDecl $
+exCurry = fmap parseDecl $
   [ "curry f   = fun x y => let p = Pair (x, y) in f p"
   , "uncurry f = fun p => case p of Pair (x, y) in f x y"
   ]
   
-exMap = runLabel . fmap parseDecl $
+exMap = fmap parseDecl $
   [ "mapFst f p = case p of Pair (x, y) in Pair (f x, y)"
   , "mapSnd g p = case p of Pair (x, y) in Pair (x, g y)"
   , "mapPair f g = compose (mapFst f) (mapSnd g)"
   ]
   
-exId = runLabel . fmap parseDecl $
+exId = fmap parseDecl $
   [ "idPair p = Pair(fst p, snd p)" 
   , "idCurry1 = compose curry uncurry" 
   , "idCurry2 = compose uncurry curry"
   ]
   
 exFunction =
-  runLabel . fmap parseDecl $
+  fmap parseDecl $
   [ "apply f x = f x"
   
   , "const x y = x"
@@ -95,15 +95,15 @@ exFunction =
   , "bind w = fun f a => case a of Pair (x, v) in case f v of Pair (y, b) in Pair (w x y, b)" 
   ]
 
-exSilly = runLabel . fmap parseDecl $
+exSilly = fmap parseDecl $
   [ "silly1 p = case p of Pair(f,g) in compose f g"
   , "silly2 p = compose (fst p) (snd p)"
   , "silly3 p x = apply (compose (fst p) (snd p)) (id x)"
   ]
 
   
-exLoop = runLabel . fmap parseDecl $
-  if True then
+exLoop = fmap parseDecl $
+  if False then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
@@ -112,7 +112,7 @@ exLoop = runLabel . fmap parseDecl $
   [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
   ]
   
-exUnion = concat $
+exUnion = runLabel . concat $
   [ exCategory
   , exPair
   , exCurry 
