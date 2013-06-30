@@ -107,12 +107,11 @@ exSilly = fmap parseDecl $
 
   
 exLoop = fmap parseDecl $
-  if True then
+  if False then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
   , "test = g fz"
-  , "rand = Pair (3, 5)"
   ] else
   [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
   ]
@@ -123,6 +122,7 @@ exPairimental = fmap parseDecl $
   , "f p = case p of Pair (x, y) in x" 
   , "test = Pair (f pA, f pB)"
   ]
+  
   
 exUnion = concat $
   [ exCategory

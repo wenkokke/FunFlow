@@ -12,7 +12,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List as L (union)
 
-import Data.Monoid hiding ((<>))
+import Data.Monoid hiding ((<>), Sum (..) )
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join)
@@ -39,7 +39,7 @@ data Type
   | TVar  TVar
   | TArr  Ann Type Type
   | TProd Ann TVar Type Type
-  | TSum  TVar Type Type
+  | TSum  Ann TVar Type Type
   deriving (Eq)
     
 instance Show Type where
@@ -58,13 +58,13 @@ showType cp =
         TProd v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b)
             where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
-            wrap ty@(TSum  _ _ _)   = printf "(%s)" (showType ty)
+            wrap ty@(TSum  _ _ _ _)   = printf "(%s)" (showType ty)
             wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
             wrap ty                 = showType ty
-        TSum n a b -> printf "%s %s %s" n (wrap a) (wrap b)
+        TSum v nm a b -> printf "%s %s %s" nm (printAnn v) (wrap a) (wrap b)
             where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
-            wrap ty@(TSum  _ _ _)   = printf "(%s)" (showType ty)
+            wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
             wrap ty                 = showType ty
   in showType
@@ -116,7 +116,7 @@ ftv (TCon  _)       = [ ]
 ftv (TVar  n)       = [n]
 ftv (TArr  _   a b) = L.union (ftv a) (ftv b)
 ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
-ftv (TSum  _   a b) = L.union (ftv a) (ftv b)
+ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
 
 -- |Returns the set of free annotation variables in a type.
 fav :: Type -> [AVar]
@@ -124,7 +124,7 @@ fav (TCon      _) = [ ]
 fav (TVar      _) = [ ]
 fav (TArr  v   a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
-fav (TSum  _   a b) = fav a `L.union` fav b
+fav (TSum  v _ a b) = fav a `L.union` fav b
 
 
 type TyEnv = Map TVar Type
@@ -142,7 +142,7 @@ instance Subst Type where
   subst m v@(TVar n)    = M.findWithDefault v n (fst m)
   subst m (TArr  v   a b) = TArr (subst m v) (subst m a) (subst m b)
   subst m (TProd v n a b) = TProd (subst m v) n (subst m a) (subst m b)
-  subst m (TSum  n a b) = TSum  n (subst m a) (subst m b)
+  subst m (TSum  v n a b) = TSum  (subst m v) n (subst m a) (subst m b)
 
 instance Subst Ann where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
@@ -199,11 +199,12 @@ u t1@(TProd (AVar p1) n1 x1 y1) t2@(TProd p2 n2 x2 y2)
                             s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
                             return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TSum n1 x1 y1) t2@(TSum n2 x2 y2)
+u t1@(TSum (AVar p1) n1 x1 y1) t2@(TSum p2 n2 x2 y2)
                   = if n1 == n2
-                    then do s1 <- x1 `u` x2;
-                            s2 <- subst s1 y1 `u` subst s1 y2
-                            return (s2 <> s1)
+                    then do let s0 = (M.empty, M.singleton p1 p2)
+                            s1 <- subst s0 x1 `u` subst s0 x2;
+                            s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
+                            return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
 u t1 t2@(TVar n)
   | n `occurs` t1 && t1 /= t2 = throwError (OccursCheck n t1)
@@ -288,18 +289,7 @@ cfa exp env = case exp of
                         return ( TArr b_0 (subst s0 a_x) t0
                                , s0
                                , c0 `union` constraint "Abs" b_0 pi
-                               )
-
-  Con pi n x y    -> do (t1, s1, c1) <- cfa x $ env
-                        (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
- 
-                        b_0 <- fresh
- 
-                        return ( TProd b_0 n (subst s2 t1) t2
-                               , s2 <> s1
-                               , subst s2 c1 `union` c1 `union` constraint n b_0 pi 
-                               )
-                               
+                               )                               
                                
   -- * adding fixpoint operators
   
@@ -359,8 +349,36 @@ cfa exp env = case exp of
                                )
                     
   -- * adding product types
-  
-  
+  Con pi n x y    -> do (t1, s1, c1) <- cfa x $ env
+                        (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
+ 
+                        b_0 <- fresh
+ 
+                        return ( TProd b_0 n (subst s2 t1) t2
+                               , s2 <> s1
+                               , subst s2 c1 `union` c1 `union` constraint n b_0 pi 
+                               )
+  -- * adding sum types
+  Sum lr pi nm t   -> case lr of
+                        L -> do (t1, s1, c1) <- cfa t $ env
+                                t2 <- fresh
+                                
+                                b_0 <- fresh
+                                
+                                return ( TSum b_0 nm t1 t2
+                                       , s1
+                                       , c1 `union` constraint ("L%" ++ nm) b_0 pi
+                                       )
+                        R -> do (t2, s1, c1) <- cfa t $ env
+                                t1 <- fresh
+                                
+                                b_0 <- fresh
+                                
+                                return ( TSum b_0 nm t1 t2
+                                       , s1
+                                       , c1 `union` constraint ("R%" ++ nm) b_0 pi
+                                       )
+
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
                         
                         a_x <- fresh

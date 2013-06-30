@@ -18,6 +18,9 @@ data Lit
   | Integer Integer
   deriving (Eq)
   
+data LR = L | R
+  deriving Eq
+  
 data Expr
   = Lit Lit
   | Var Name
@@ -26,7 +29,8 @@ data Expr
   | App Expr Expr
   | Bin Name Expr Expr
   | Let Name Expr Expr
-  | Con Label Name Expr Expr      -- ^ con constructor arg0 arg1
+  | Con    Label Name Expr Expr   -- ^ con constructor arg0 arg1
+  | Sum LR Label Name Expr
   | Des Expr Name Name Name Expr  -- ^ as constructor arg0 arg1 destruct e1 in e2
   | ITE Expr Expr Expr
   deriving (Eq)
