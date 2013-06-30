@@ -35,7 +35,7 @@ type Name
   = String
   
 type Label
-  = Integer
+  = String
   
 noLabel :: Label
 noLabel = undefined
@@ -80,11 +80,11 @@ instance Show Decl where
 instance Show Expr where
   show (Lit l) = show l
   show (Var n) = n
-  show (Abs l n e) = printf "fun %s =%s> %s" n (show l) (show e)
+  show (Abs l n e) = printf "fun %s =%s> %s" n l (show e)
   show (App e1 e2) = printf "(%s %s)" (show e1) (show e2)
   show (Bin n e1 e2) = printf "(%s %s %s)" (show e1) n (show e2)
   show (Let n e1 e2) = printf "let %s = %s in %s" n (show e1) (show e2)
-  show (Fix l f n e) = printf "fix %s %s =%s> %s" f n (show l) (show e)
+  show (Fix l f n e) = printf "fix %s %s =%s> %s" f n l (show e)
   show (Con l n e1 e2) = printf "%s[%s](%s,%s)" n (show l) (show e1) (show e1)
   show (Des e1 n a b e2) = printf "case %s of %s(%s,%s) in %s" (show e1) n a b (show e1)
   show (ITE b e1 e2) = printf "if %s then %s else %s" (show b) (show e1) (show e2)

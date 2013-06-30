@@ -9,6 +9,7 @@ import Prelude hiding (mapM)
 
 import Data.Map (Map)
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Data.List as L (union)
 
 import Data.Monoid hiding ((<>))
@@ -33,14 +34,14 @@ type TyEnv = Env
 type TVar = Name
 type AVar = Name
 
-data TAnn 
+data Ann 
   = AVar AVar
   deriving (Eq, Ord, Show)
 
 data Type
   = TCon  TVar
   | TVar  TVar
-  | TArr  TAnn Type Type
+  | TArr  Ann Type Type
   | TSum  TVar Type Type
   | TProd TVar Type Type
   deriving (Eq)
@@ -54,11 +55,11 @@ showType cp = let
     case ty of 
       (TCon  n    ) -> n
       (TVar  n    ) -> n
-      (TArr  r a b) -> printf "%s -%s> %s" (wrap a) (printTAnn r) (wrap b)
+      (TArr  r a b) -> printf "%s -%s> %s" (wrap a) (printAnn r) (wrap b)
           where
           wrap ty@(TArr _ _ _) = printf "(%s)" (showType' ty)
           wrap ty             = showType' ty
-          printTAnn (AVar s) = if cp then "(" ++ s ++ ")" else ""
+          printAnn (AVar s) = if cp then s else ""
       (TSum n a b) -> printf "%s %s %s" n (wrap a) (wrap b)
           where
           wrap ty@(TProd _ _ _) = printf "(%s)" (showType' ty)
@@ -80,9 +81,9 @@ runCFA :: [Decl] -> Either TypeError (Env, Set Constraint)
 runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
   where
   addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
-  addDecl r (Decl x e) = do (env, c0) <- r;
-                            (t, _, c1) <- cfa e $ env
-                            return (M.insert x t env, c0 `union` c1)
+  addDecl r (Decl x e) = do (env, c0) <- r
+                            (t, s1, c1) <- cfa e $ env
+                            return (M.insert x t env, subst s1 c0 `union` c1)
 
 
 -- |Provides an infinite stream of names to things in the @CFA@ monad,
@@ -90,7 +91,7 @@ runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
 withFreshVars :: CFA a -> Either TypeError a
 withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
   where
-  freshAVars = fmap (show) [0..]
+  freshAVars = fmap show [0..]
   freshTVars = letters ++ numbers
     where
     letters = fmap (: []) ['a'..'z']
@@ -104,8 +105,7 @@ refreshAll env = do (env, c) <- env;
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> CFA Type
-refresh t1 = do subs <- forM (ftv t1)
-                        $ \a ->
+refresh t1 = do subs <- forM (ftv t1) $ \a ->
                           do b <- fresh;
                              return (M.singleton a b, M.empty)
                 return (subst (mconcat subs) t1)
@@ -118,26 +118,25 @@ ftv (TArr  _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ a b) = L.union (ftv a) (ftv b)
 ftv (TProd _ a b) = L.union (ftv a) (ftv b)
   
-type TySubst = (Map TVar Type, Map AVar TAnn)
+type TySubst = (Map TVar Type, Map AVar Ann)
 
 class Subst w where
   subst :: TySubst -> w -> w
 
+  
 -- |Substitutes a type for a type variable in a type.
 instance Subst Type where
   subst m c@(TCon _)    = c
   subst m v@(TVar n)    = M.findWithDefault v n (fst m)
-  subst m (TArr v@(AVar n)  a b) = TArr ( M.findWithDefault v n (snd m) ) (subst m a) (subst m b)
+  subst m (TArr  v a b) = TArr (subst m v) (subst m a) (subst m b)
   subst m (TSum  n a b) = TSum  n (subst m a) (subst m b)
   subst m (TProd n a b) = TProd n (subst m a) (subst m b)
 
-instance Subst TAnn where
+instance Subst Ann where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
   
 instance Subst (Set Constraint) where
-  subst m cs = flip Set.map cs $ \t ->
-    case t of 
-         Constraint v@(AVar n) r -> Constraint ( M.findWithDefault v n (snd m) ) r
+  subst m cs = flip Set.map cs $ \(Constraint v r) -> Constraint (subst m v) r
   
 type Env = Map TVar Type
 
@@ -193,11 +192,11 @@ u t1@(TSum n1 x1 y1) t2@(TSum n2 x2 y2)
                             s2 <- subst s1 y1 `u` subst s1 y2
                             return (s2 <> s1)
                     else do throwError (CannotUnify t1 t2)
-u t1 (TVar n)
-  | n `occurs` t1 = throwError (OccursCheck n t1)
+u t1 t2@(TVar n)
+  | n `occurs` t1 && t1 /= t2 = throwError (OccursCheck n t1)
   | otherwise     = return (M.singleton n t1, M.empty)
-u (TVar n) t2
-  | n `occurs` t2 = throwError (OccursCheck n t2)
+u t1@(TVar n) t2
+  | n `occurs` t2 && t1 /= t2 = throwError (OccursCheck n t2)
   | otherwise     = return (M.singleton n t2, M.empty)
 u t1 t2           = throwError (CannotUnify t1 t2)
 
@@ -211,19 +210,32 @@ class Fresh t where
 instance Fresh Type where
   fresh = fmap TVar $ lift (lift supply)
   
-instance Fresh TAnn where
+instance Fresh Ann where
   fresh = fmap AVar $ lift supply
 
 (~>) :: TVar -> Type -> Env -> Env
 (~>) = M.insert
 
 (<>) :: TySubst -> TySubst -> TySubst
-(<>) (s2, a2) (s1, a1) = ( M.union s2 (fmap (subst (s2, M.empty)) s1)
-                         , M.union a2 a1 {- is this enough? -}
-                         )
+(<>) m@(s2, a2) (s1, a1) = ( s2 `M.union` (subst m <$> s1)
+                           , a2 `M.union` (subst m <$> a1)
+                           )
 
-data Constraint = Constraint TAnn Label
+data Constraint = Constraint Ann Label
   deriving (Eq, Ord, Show)
+  
+printFlow :: Map AVar (Set Label) -> String
+printFlow m = 
+  let prefix = "{\n"
+      content = M.foldWithKey (\k a as -> "  " ++ k ++ " -> " ++ show a ++ "\n" ++ as) "" m
+      suffix = "}"
+  in prefix ++ content ++ suffix
+  
+organiseFlow :: Set Constraint -> Map AVar (Set Label)
+organiseFlow = M.unionsWith (union) . map extractConstraint . S.toList where
+  extractConstraint (Constraint v l) = case v of
+                                          AVar r -> M.singleton r (S.singleton l)
+
   
 ($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
 f $* a = \d -> case M.lookup a f of
@@ -234,6 +246,9 @@ f $* a = \d -> case M.lookup a f of
 (<&>) = flip fmap
 
 infixr 1 <&>
+
+constraint :: Ann -> Label -> Set Constraint
+constraint a l = singleton $ Constraint a l
 
 -- |Algorithm W for type inference.
 cfa :: Expr -> Env -> CFA (Type, TySubst, Set Constraint)
@@ -246,7 +261,7 @@ cfa exp env = case exp of
   Abs p x e       -> do a_x <- fresh;
                         (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
                         b_0 <- fresh
-                        let constraints = c0 `union` singleton (Constraint b_0 p)
+                        let constraints = c0 `union` constraint b_0 p
                         return (TArr b_0 (subst s0 a_x) t0, s0, constraints)
 
   -- * adding fixpoint operators
@@ -256,9 +271,9 @@ cfa exp env = case exp of
                         b_0 <- fresh
                         (t0, s0, c0) <- cfa e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
                         s1 <- t0 `u` subst s0 a_0
-                        let b1 = subst (s1 <> s0) b_0 
-                            constraints = subst s1 c0 `union` singleton (Constraint b1 p)
-                        return (TArr b1 (subst (s1 <> s0) a_x) (subst s1 t0), s1 <> s0, constraints)
+                        let b_1 = subst (s1 <> s0) b_0 
+                            constraints = subst s1 c0 `union` constraint b_1 p
+                        return (TArr b_1 (subst (s1 <> s0) a_x) (subst s1 t0), s1 <> s0, constraints)
 
                         
   App f e         -> do (t1, s1, c1) <- cfa f $ env
@@ -266,12 +281,14 @@ cfa exp env = case exp of
                         a <- fresh;
                         b <- fresh
                         s3 <- subst s2 t1 `u` TArr b t2 a
-                        let constraints = subst (s3 <> s2) c1 `union` subst s3 c2 
+                        let constraints = subst (s3 <> s2) c1 `union` 
+                                          subst  s3        c2 
                         return (subst s3 a, s3 <> s2 <> s1, constraints)
   
   Let x e1 e2     -> do (t1, s1, c1) <- cfa e1 $ env;
                         (t2, s2, c2) <- cfa e2 . (x ~> t1) . fmap (subst s1) $ env
-                        let constraints = subst s2 c1 `union` c2
+                        let constraints = subst s2 c1 `union` 
+                                                   c2
                         return (t2, s2 <> s1, constraints)
 
                     
@@ -282,7 +299,9 @@ cfa exp env = case exp of
                         (t2, s2, c2) <- cfa e2 . fmap (subst (s1 <> s0)) $ env
                         s3 <- subst (s2 <> s1) t0 `u` TCon "Bool"
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
-                        let constraints = subst (s4 <> s3 <> s2 <> s1) c0 `union` subst (s4 <> s3 <> s2) c1 `union` subst (s4 <> s3) c2
+                        let constraints = subst (s4 <> s3 <> s2 <> s1) c0 `union` 
+                                          subst (s4 <> s3 <> s2)       c1 `union` 
+                                          subst (s4 <> s3)             c2
                         return (subst (s4 <> s3) t2, s4 <> s3 <> s2 <> s1, constraints)
                     
   -- * adding product types

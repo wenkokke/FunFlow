@@ -6,7 +6,7 @@ import Control.Monad.Supply
 class Labelable a where
   label :: a -> Supply Label a
   runLabel :: a -> a
-  runLabel a = evalSupply (label a) [0..]
+  runLabel a = evalSupply (label a) (fmap (:[]) ['A'..'Z'] ++ fmap show [0..]) 
 
 instance (Labelable a) => (Labelable [a]) where
   label = mapM label
