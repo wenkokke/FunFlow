@@ -123,8 +123,8 @@ exPairimental = fmap parseDecl $
   ]
   
 exSum = fmap parseDecl $
-  [ "testL = L_Either 5"
-  , "testR = R_Either 8"
+  [ "testL = %L_Either 5"
+  , "testR = %R_Either 8"
   ]
 
   
