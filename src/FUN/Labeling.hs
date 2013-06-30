@@ -26,5 +26,6 @@ instance Labelable Expr where
   label (Let n e1 e2)     = do e1 <- label e1; e2 <- label e2; return (Let n e1 e2)
   label (Fix _ f n e)     = do l <- supply; e <- label e; return (Fix l f n e)
   label (Con _ n e1 e2)   = do l <- supply; e1 <- label e1; e2 <- label e2; return (Con l n e1 e2)
+  label (Sum lr _ n e)    = do l <- supply; e <- label e; return (Sum lr l n e)      
   label (Des e1 n a b e2) = do e1 <- label e1; e2 <- label e2; return (Des e1 n a b e2)
   label (ITE b e1 e2)     = do b <- label b; e1 <- label e1; e2 <- label e2; return (ITE b e1 e2)

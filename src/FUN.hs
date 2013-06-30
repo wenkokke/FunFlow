@@ -120,8 +120,13 @@ exPairimental = fmap parseDecl $
   [ "pA = Pair (3, 5)"
   , "pB = Pair (7, 11)"
   , "f p = case p of Pair (x, y) in x" 
-  , "test = Pair (f pA, f pB)"
   ]
+  
+exSum = fmap parseDecl $
+  [ "testL = L_Either 5"
+  , "testR = R_Either 8"
+  ]
+
   
   
 exUnion = concat $
@@ -134,6 +139,7 @@ exUnion = concat $
   , exLoop
   , exSilly
   , exPairimental
+  , exSum
   ]
   
 ex1 = runLabel $ exUnion

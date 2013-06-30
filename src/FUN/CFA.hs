@@ -58,10 +58,10 @@ showType cp =
         TProd v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b)
             where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
-            wrap ty@(TSum  _ _ _ _)   = printf "(%s)" (showType ty)
+            wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
             wrap ty                 = showType ty
-        TSum v nm a b -> printf "%s %s %s" nm (printAnn v) (wrap a) (wrap b)
+        TSum v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b)
             where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
@@ -140,9 +140,9 @@ class Subst w where
 instance Subst Type where
   subst m c@(TCon _)    = c
   subst m v@(TVar n)    = M.findWithDefault v n (fst m)
-  subst m (TArr  v   a b) = TArr (subst m v) (subst m a) (subst m b)
-  subst m (TProd v n a b) = TProd (subst m v) n (subst m a) (subst m b)
-  subst m (TSum  v n a b) = TSum  (subst m v) n (subst m a) (subst m b)
+  subst m (TArr  v    a b) = TArr (subst m v) (subst m a) (subst m b)
+  subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
+  subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
 
 instance Subst Ann where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
@@ -349,14 +349,14 @@ cfa exp env = case exp of
                                )
                     
   -- * adding product types
-  Con pi n x y    -> do (t1, s1, c1) <- cfa x $ env
+  Con pi nm x y   -> do (t1, s1, c1) <- cfa x $ env
                         (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
  
                         b_0 <- fresh
  
-                        return ( TProd b_0 n (subst s2 t1) t2
+                        return ( TProd b_0 nm (subst s2 t1) t2
                                , s2 <> s1
-                               , subst s2 c1 `union` c1 `union` constraint n b_0 pi 
+                               , subst s2 c1 `union` c1 `union` constraint nm b_0 pi 
                                )
   -- * adding sum types
   Sum lr pi nm t   -> case lr of
@@ -367,7 +367,7 @@ cfa exp env = case exp of
                                 
                                 return ( TSum b_0 nm t1 t2
                                        , s1
-                                       , c1 `union` constraint ("L%" ++ nm) b_0 pi
+                                       , c1 `union` constraint ("L_" ++ nm) b_0 pi
                                        )
                         R -> do (t2, s1, c1) <- cfa t $ env
                                 t1 <- fresh
@@ -376,7 +376,7 @@ cfa exp env = case exp of
                                 
                                 return ( TSum b_0 nm t1 t2
                                        , s1
-                                       , c1 `union` constraint ("R%" ++ nm) b_0 pi
+                                       , c1 `union` constraint ("R_" ++ nm) b_0 pi
                                        )
 
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env

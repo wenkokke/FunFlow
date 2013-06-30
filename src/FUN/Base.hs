@@ -50,6 +50,9 @@ noLabel = ""
 con :: Name -> [Expr] -> Expr
 con n xs = foldr1 (Con noLabel n) xs
 
+sum :: LR -> Name -> Expr -> Expr
+sum lr nm = Sum lr noLabel nm  
+
 -- |Constructs an N-ary cartesian product destruction
 des :: Expr -> Name -> [Name] -> Expr -> Expr
 des e1 n (x:y:xs) e2 = Des e1 n x y e2
@@ -95,7 +98,8 @@ showExpr cp =
         App e1 e2        -> printf "(%s %s)" (showExpr e1) (showExpr e2)
         Bin n e1 e2      -> printf "(%s %s %s)" (showExpr e1) n (showExpr e2)
         Let n e1 e2      -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
-        Con l nm e1 e2   -> printf "%s%s (%s,%s)" nm (showAnn l) (showExpr e1) (showExpr e2)
+        Con pi nm e1 e2  -> printf "%s%s (%s,%s)" nm (showAnn pi) (showExpr e1) (showExpr e2)
+        Sum lr pi nm e   -> "LR_" ++ nm ++ (showAnn pi) ++ "(" ++ showExpr e ++ ")"
         Des e1 n a b e2  -> printf "case %s of %s(%s,%s) in %s" (showExpr e1) n a b (showExpr e2)
         ITE b e1 e2      -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)
   in showExpr
