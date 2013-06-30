@@ -27,8 +27,6 @@ import qualified Data.Set as Set
 
 -- * For Pepijn ^^
 
-type TyEnv = Env 
-
 -- * Type definitions
 
 type TVar = Name
@@ -77,10 +75,10 @@ showType cp = let
 
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
-runCFA :: [Decl] -> Either TypeError (Env, Set Constraint)
+runCFA :: [Decl] -> Either TypeError (TyEnv, Set Constraint)
 runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
   where
-  addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
+  addDecl :: CFA (TyEnv, Set Constraint) -> Decl-> CFA (TyEnv, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r
                             (t, s1, c1) <- cfa e $ env
                             return (M.insert x t env, subst s1 c0 `union` c1)
@@ -98,7 +96,7 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
     numbers = fmap (('t' :) . show) [0..]
 
 -- |Refreshes all entries in a type environment.
-refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
+refreshAll :: Either TypeError (TyEnv, Set Constraint) -> Either TypeError (TyEnv, Set Constraint)
 refreshAll env = do (env, c) <- env;
                     env <- mapM (withFreshVars . refresh) env
                     return (env, c {- TODO: refresh constraint sets, if needed? -} ) 
@@ -117,8 +115,11 @@ ftv (TVar      n) = [n]
 ftv (TArr  _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ a b) = L.union (ftv a) (ftv b)
 ftv (TProd _ a b) = L.union (ftv a) (ftv b)
-  
-type TySubst = (Map TVar Type, Map AVar Ann)
+
+type TyEnv = Map TVar Type
+type AnnEnv = Map TVar Ann
+
+type TySubst = (TyEnv, AnnEnv)
 
 class Subst w where
   subst :: TySubst -> w -> w
@@ -138,7 +139,7 @@ instance Subst Ann where
 instance Subst (Set Constraint) where
   subst m cs = flip Set.map cs $ \(Constraint v r) -> Constraint (subst m v) r
   
-type Env = Map TVar Type
+
 
 -- |Representation for possible errors in algorithm W.
 data TypeError
@@ -213,7 +214,7 @@ instance Fresh Type where
 instance Fresh Ann where
   fresh = fmap AVar $ lift supply
 
-(~>) :: TVar -> Type -> Env -> Env
+(~>) :: TVar -> Type -> TyEnv -> TyEnv
 (~>) = M.insert
 
 (<>) :: TySubst -> TySubst -> TySubst
@@ -251,7 +252,7 @@ constraint :: Ann -> Label -> Set Constraint
 constraint a l = singleton $ Constraint a l
 
 -- |Algorithm W for type inference.
-cfa :: Expr -> Env -> CFA (Type, TySubst, Set Constraint)
+cfa :: Expr -> TyEnv -> CFA (Type, TySubst, Set Constraint)
 cfa exp env = case exp of
   Lit l           -> return ( typeOf l
                             , mempty
