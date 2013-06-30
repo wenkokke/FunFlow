@@ -9,8 +9,8 @@ import FUN.Parsing                      -- ^ parser
 import FUN.Labeling                     -- ^ labeling
 import FUN.W (runW)                     -- ^ type inference
 import FUN.CFA 
-  ( runCFA, TypeError,TyEnv, Constraint, showType
-  , printFlow, organiseFlow
+  ( runCFA, TypeError, TyEnv, Constraint, showType
+  , printFlow, organiseFlow, TVar (..), Type (..)
   ) -- ^ control flow analysis
 
 import Text.Printf (printf)
@@ -31,27 +31,32 @@ parseExpr = runParser "stdin" pExpr
 
 -- * Example code
 
-printProgram :: [Decl] -> String
-printProgram p = "{\n" ++ foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "\n"  p ++ "}"
+printProgram :: [Decl] -> M.Map TVar Type -> String
+printProgram p env = 
+  let showAnns = True
+      
+      funcType (Decl nm e) = case M.lookup nm env of
+                               Just r  -> nm ++ " :: " ++ (showType showAnns r)
+                               Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
+      funcBody = show
+      prefix = "{\n"
+      suffix = "}"
+      
+      printer x xs = "  " ++ funcType x ++ "\n  " ++ funcBody x ++ "\n\n" ++ xs 
+      
+  in prefix ++ foldr printer "" p ++ suffix
 
 main :: IO ()
 main = 
-  let showAnns = True {- True = print annotation variables, False = just print inferred types -}
-        
-      program = ex1
+  let program = ex1
         
       put :: (TyEnv, S.Set Constraint) -> String
-      put (m, w) =  let typePrinter = \k v r -> "  " ++ k ++ " :: " ++ (showType showAnns v) ++ "\n" ++ r
-                        typeList = "{\n" ++ M.foldWithKey typePrinter [] m ++ "}"
-                        
-                        programInfo = "program = " ++ printProgram program
+      put (m, w) =  let programInfo = "program = " ++ printProgram program m
                         annInfo  = "control flow = " ++ (printFlow . organiseFlow $ w)
-                        typeInfo = "inferred toplevel types = " ++ typeList 
-                        
                         
                     in    programInfo ++ "\n\n"
                        ++ annInfo     ++ "\n\n"
-                       ++ typeInfo    ++ "\n\n"
+                       
       env :: Either TypeError (TyEnv, S.Set Constraint)
       env = runCFA program
   in either print (putStrLn . put) env
