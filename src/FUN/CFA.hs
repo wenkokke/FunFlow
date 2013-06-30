@@ -253,14 +253,23 @@ constraint a l = singleton $ Constraint a l
 -- |Algorithm W for type inference.
 cfa :: Expr -> Env -> CFA (Type, TySubst, Set Constraint)
 cfa exp env = case exp of
-  Lit l           -> return (typeOf l, mempty, empty)
+  Lit l           -> return ( typeOf l
+                            , mempty
+                            , empty
+                            )
   
-  Var x           -> let notFoundError = throwError (UnboundVariable x)
-                     in (env $* x) notFoundError <&> \v -> (v, mempty, empty)
+  Var x           -> do v <- (env $* x) $ throwError (UnboundVariable x)
+                           
+                        return ( v
+                               , mempty
+                               , empty
+                               )
                
   Abs p x e       -> do a_x <- fresh;
-                        (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
                         b_0 <- fresh
+                        
+                        (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
+                        
                         return ( TArr b_0 (subst s0 a_x) t0
                                , s0
                                , c0 `union` constraint b_0 p
@@ -271,9 +280,13 @@ cfa exp env = case exp of
   Fix p f x e     -> do a_x <- fresh
                         a_0 <- fresh
                         b_0 <- fresh
+                        
                         (t0, s0, c0) <- cfa e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
+                        
                         s1 <- t0 `u` subst s0 a_0
+                        
                         let b_1 = subst (s1 <> s0) b_0 
+
                         return ( TArr b_1 (subst (s1 <> s0) a_x) (subst s1 t0)
                                , s1 <> s0
                                , subst s1 c0 `union` constraint b_1 p
@@ -282,8 +295,10 @@ cfa exp env = case exp of
                         
   App f e         -> do (t1, s1, c1) <- cfa f $ env
                         (t2, s2, c2) <- cfa e . fmap (subst s1) $ env
+                        
                         a <- fresh;
                         b <- fresh
+                        
                         s3 <- subst s2 t1 `u` TArr b t2 a
 
                         return ( subst s3 a 
@@ -306,6 +321,7 @@ cfa exp env = case exp of
   ITE b e1 e2     -> do (t0, s0, c0) <- cfa b  $ env;
                         (t1, s1, c1) <- cfa e1 . fmap (subst s0) $ env
                         (t2, s2, c2) <- cfa e2 . fmap (subst (s1 <> s0)) $ env
+                        
                         s3 <- subst (s2 <> s1) t0 `u` TCon "Bool"
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
 
@@ -327,8 +343,10 @@ cfa exp env = case exp of
                                )
   
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
+                        
                         a <- fresh
                         b <- fresh
+                        
                         s2 <- t1 `u` TProd n a b
                         (t3, s3, c3) <- cfa e2 . (y ~> b) . (x ~> a) . fmap (subst (s2 <> s1)) $ env
 

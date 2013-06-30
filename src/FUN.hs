@@ -56,36 +56,29 @@ main =
       env = runCFA program
   in either print (putStrLn . put) env
         
-
-exMap = runLabel . fmap parseDecl $
-  [ "mapFst f p = case p of Pair (x, y) in Pair (f x, y)"
-  , "mapSnd g p = case p of Pair (x, y) in Pair (x, g y)"
-  , "mapPair f g = compose (mapFst f) (mapSnd g)"
+exCategory = runLabel . fmap parseDecl $
+  [ "compose f g x = f (g x)"
+  , "id x = x"
   ]
-  
+
 exPair = runLabel . fmap parseDecl $
   [ "pair x y = Pair (x,y)"
   , "fst p = case p of Pair(x,y) in x"
   , "snd p = case p of Pair(x,y) in y"
   , "swap p = case p of Pair (x, y) in Pair (y, x)"
   ]
- 
-expCurry = runLabel . fmap parseDecl $
+
+exCurry = runLabel . fmap parseDecl $
   [ "curry f   = fun x y => let p = Pair (x, y) in f p"
   , "uncurry f = fun p => case p of Pair (x, y) in f x y"
   ]
- 
-exCategory = runLabel . fmap parseDecl $
-  [ "compose f g x = f (g x)"
-  , "id x = x"
+  
+exMap = runLabel . fmap parseDecl $
+  [ "mapFst f p = case p of Pair (x, y) in Pair (f x, y)"
+  , "mapSnd g p = case p of Pair (x, y) in Pair (x, g y)"
+  , "mapPair f g = compose (mapFst f) (mapSnd g)"
   ]
-
-exSilly = runLabel . fmap parseDecl $
-  [ "silly1 p = case p of Pair(f,g) in compose f g"
-  , "silly2 p = compose (fst p) (snd p)"
-  , "silly3 p x = apply (compose (fst p) (snd p)) (id x)"
-  ]
-
+  
 exId = runLabel . fmap parseDecl $
   [ "idPair p = Pair(fst p, snd p)" 
   , "idCurry1 = compose curry uncurry" 
@@ -102,8 +95,15 @@ exFunction =
   , "bind w = fun f a => case a of Pair (x, v) in case f v of Pair (y, b) in Pair (w x y, b)" 
   ]
 
+exSilly = runLabel . fmap parseDecl $
+  [ "silly1 p = case p of Pair(f,g) in compose f g"
+  , "silly2 p = compose (fst p) (snd p)"
+  , "silly3 p x = apply (compose (fst p) (snd p)) (id x)"
+  ]
+
+  
 exLoop = runLabel . fmap parseDecl $
-  if False then
+  if True then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
@@ -112,5 +112,16 @@ exLoop = runLabel . fmap parseDecl $
   [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
   ]
   
-ex1 = exLoop
+exUnion = concat $
+  [ exCategory
+  , exPair
+  , exCurry 
+  , exMap
+  , exId
+  , exFunction
+  , exLoop
+  , exSilly
+  ]
+  
+ex1 = exUnion
   
