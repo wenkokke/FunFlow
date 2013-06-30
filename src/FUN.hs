@@ -33,12 +33,12 @@ parseExpr = runParser "stdin" pExpr
 
 printProgram :: [Decl] -> M.Map TVar Type -> String
 printProgram p env = 
-  let showAnns = True
+  let annotations = True
       
       funcType (Decl nm e) = case M.lookup nm env of
-                               Just r  -> nm ++ " :: " ++ (showType showAnns r)
+                               Just r  -> nm ++ " :: " ++ (showType annotations r)
                                Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
-      funcBody = show
+      funcBody = showDecl annotations
       prefix = "{\n"
       suffix = "}"
       
@@ -112,8 +112,16 @@ exLoop = fmap parseDecl $
   , "g = fix f x => f fy"
   , "fz = fun z => z"
   , "test = g fz"
+  , "rand = Pair (3, 5)"
   ] else
   [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
+  ]
+  
+exPairimental = fmap parseDecl $
+  [ "pA = Pair (3, 5)"
+  , "pB = Pair (7, 11)"
+  , "f p = case p of Pair (x, y) in x" 
+  , "test = Pair (f pA, f pB)"
   ]
   
 exUnion = concat $
@@ -125,6 +133,7 @@ exUnion = concat $
   , exFunction
   , exLoop
   , exSilly
+  , exPairimental
   ]
   
 ex1 = runLabel $ exUnion

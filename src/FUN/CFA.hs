@@ -38,37 +38,36 @@ data Type
   = TCon  TVar
   | TVar  TVar
   | TArr  Ann Type Type
+  | TProd Ann TVar Type Type
   | TSum  TVar Type Type
-  | TProd TVar Type Type
   deriving (Eq)
     
 instance Show Type where
   show = showType False
 
 showType :: Bool -> Type -> String
-showType cp = let 
-  showType' ty = 
-    case ty of 
-      (TCon  n    ) -> n
-      (TVar  n    ) -> n
-      (TArr  r a b) -> printf "%s -%s> %s" (wrap a) (printAnn r) (wrap b)
-          where
-          wrap ty@(TArr _ _ _) = printf "(%s)" (showType' ty)
-          wrap ty             = showType' ty
-          printAnn (AVar s) = if cp then s else ""
-      (TSum n a b) -> printf "%s %s %s" n (wrap a) (wrap b)
-          where
-          wrap ty@(TProd _ _ _) = printf "(%s)" (showType' ty)
-          wrap ty@(TSum  _ _ _) = printf "(%s)" (showType' ty)
-          wrap ty@(TArr _ _ _)  = printf "(%s)" (showType' ty)
-          wrap ty                = showType' ty
-      (TProd n a b) -> printf "%s %s %s" n (wrap a) (wrap b)
-          where
-          wrap ty@(TProd _ _ _) = printf "(%s)" (showType' ty)
-          wrap ty@(TSum  _ _ _) = printf "(%s)" (showType' ty)
-          wrap ty@(TArr _ _ _)  = printf "(%s)" (showType' ty)
-          wrap ty                = showType' ty
- in showType' 
+showType cp = 
+  let printAnn (AVar s) = if cp then "[" ++ s ++ "]" else ""
+      showType ty = case ty of 
+        TCon  n     -> n
+        TVar  n     -> n
+        TArr  v a b -> printf "%s -%s> %s" (wrap a) (printAnn v) (wrap b)
+            where
+            wrap ty@(TArr _ _ _) = printf "(%s)" (showType ty)
+            wrap ty              = showType ty
+        TProd v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b)
+            where
+            wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
+            wrap ty@(TSum  _ _ _)   = printf "(%s)" (showType ty)
+            wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
+            wrap ty                 = showType ty
+        TSum n a b -> printf "%s %s %s" n (wrap a) (wrap b)
+            where
+            wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
+            wrap ty@(TSum  _ _ _)   = printf "(%s)" (showType ty)
+            wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
+            wrap ty                 = showType ty
+  in showType
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
@@ -79,7 +78,9 @@ runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
   addDecl :: CFA (TyEnv, Set Constraint) -> Decl-> CFA (TyEnv, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r
                             (t, s1, c1) <- cfa e $ env
-                            let s2 = (M.empty, snd s1) 
+                            
+                            let s2 = (M.empty, snd s1)
+                                
                             return ( M.insert x t . fmap (subst s2) $ env
                                    , subst s1 c0 `union` c1
                                    )
@@ -111,19 +112,19 @@ refresh t1 = do subs <- forM (ftv t1) $ \a ->
 
 -- |Returns the set of free type variables in a type.
 ftv :: Type -> [TVar]
-ftv (TCon      _) = [ ]
-ftv (TVar      n) = [n]
-ftv (TArr  _ a b) = L.union (ftv a) (ftv b)
-ftv (TSum  _ a b) = L.union (ftv a) (ftv b)
-ftv (TProd _ a b) = L.union (ftv a) (ftv b)
+ftv (TCon  _)       = [ ]
+ftv (TVar  n)       = [n]
+ftv (TArr  _   a b) = L.union (ftv a) (ftv b)
+ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
+ftv (TSum  _   a b) = L.union (ftv a) (ftv b)
 
--- |Returns the set of free type variables in a type.
+-- |Returns the set of free annotation variables in a type.
 fav :: Type -> [AVar]
 fav (TCon      _) = [ ]
 fav (TVar      _) = [ ]
-fav (TArr  l a b) = fav a `L.union` fav b `L.union` [case l of (AVar r) -> r]
-fav (TSum  _ a b) = fav a `L.union` fav b
-fav (TProd _ a b) = fav a `L.union` fav b
+fav (TArr  v   a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
+fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
+fav (TSum  _   a b) = fav a `L.union` fav b
 
 
 type TyEnv = Map TVar Type
@@ -139,15 +140,15 @@ class Subst w where
 instance Subst Type where
   subst m c@(TCon _)    = c
   subst m v@(TVar n)    = M.findWithDefault v n (fst m)
-  subst m (TArr  v a b) = TArr (subst m v) (subst m a) (subst m b)
+  subst m (TArr  v   a b) = TArr (subst m v) (subst m a) (subst m b)
+  subst m (TProd v n a b) = TProd (subst m v) n (subst m a) (subst m b)
   subst m (TSum  n a b) = TSum  n (subst m a) (subst m b)
-  subst m (TProd n a b) = TProd n (subst m a) (subst m b)
 
 instance Subst Ann where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
   
 instance Subst (Set Constraint) where
-  subst m cs = flip Set.map cs $ \(Constraint v r) -> Constraint (subst m v) r
+  subst m cs = flip Set.map cs $ \(Constraint nm v r) -> Constraint nm (subst m v) r
   
 
 
@@ -191,11 +192,12 @@ u (TArr (AVar p1) a1 b1) (TArr p2 a2 b2)
                        s1 <- subst s0 a1 `u` subst s0 a2
                        s2 <- subst (s1 <> s0) b1 `u` subst (s1 <> s0) b2
                        return (s2 <> s1 <> s0)
-u t1@(TProd n1 x1 y1) t2@(TProd n2 x2 y2)
+u t1@(TProd (AVar p1) n1 x1 y1) t2@(TProd p2 n2 x2 y2)
                   = if n1 == n2
-                    then do s1 <- x1 `u` x2;
-                            s2 <- subst s1 y1 `u` subst s1 y2
-                            return (s2 <> s1)
+                    then do let s0 = (M.empty, M.singleton p1 p2)
+                            s1 <- subst s0 x1 `u` subst s0 x2;
+                            s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
+                            return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
 u t1@(TSum n1 x1 y1) t2@(TSum n2 x2 y2)
                   = if n1 == n2
@@ -232,34 +234,36 @@ instance Fresh Ann where
                            , a2 `M.union` (subst m <$> a1)
                            )
 
-data Constraint = Constraint Ann Label
+data Constraint = Constraint String Ann Label
   deriving (Eq, Ord, Show)
   
-printFlow :: Map AVar (Set Label) -> String
+printFlow :: Map AVar (String, Set Label) -> String
 printFlow m = 
   let prefix = "{\n"
-      content = M.foldWithKey (\k a as -> "  " ++ k ++ " -> " ++ show a ++ "\n" ++ as) "" m
+      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
+      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
-  
-organiseFlow :: Set Constraint -> Map AVar (Set Label)
-organiseFlow = M.unionsWith (union) . map extractConstraint . S.toList where
-  extractConstraint (Constraint v l) = case v of
-                                          AVar r -> M.singleton r (S.singleton l)
+    
+organiseFlow :: Set Constraint -> Map AVar (String, Set Label)
+organiseFlow = M.unionsWith (\(nx, vx) (ny, vy) -> (nx, vx `union` vy) ) . map extractConstraint . S.toList where
+  extractConstraint (Constraint nm v l) = case v of
+                                          AVar r -> M.singleton r (nm, S.singleton l)
 
   
 ($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
-f $* a = \d -> case M.lookup a f of
-                    Just b  -> pure b
-                    Nothing -> d
+f $* a = \d -> 
+  case M.lookup a f of
+    Just b  -> pure b
+    Nothing -> d
 
 (<&>) :: Functor f => f a -> (a -> b) -> f b
 (<&>) = flip fmap
 
 infixr 1 <&>
 
-constraint :: Ann -> Label -> Set Constraint
-constraint a l = singleton $ Constraint a l
+constraint :: String -> Ann -> Label -> Set Constraint
+constraint nm a l = singleton $ Constraint nm a l
 
 -- |Algorithm W for type inference.
 cfa :: Expr -> TyEnv -> CFA (Type, TySubst, Set Constraint)
@@ -276,19 +280,30 @@ cfa exp env = case exp of
                                , empty
                                )
                
-  Abs p x e       -> do a_x <- fresh;
+  Abs pi x e      -> do a_x <- fresh
                         b_0 <- fresh
-                        
+                       
                         (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
-                        
+                       
                         return ( TArr b_0 (subst s0 a_x) t0
                                , s0
-                               , c0 `union` constraint b_0 p
+                               , c0 `union` constraint "Abs" b_0 pi
                                )
 
+  Con pi n x y    -> do (t1, s1, c1) <- cfa x $ env
+                        (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
+ 
+                        b_0 <- fresh
+ 
+                        return ( TProd b_0 n (subst s2 t1) t2
+                               , s2 <> s1
+                               , subst s2 c1 `union` c1 `union` constraint n b_0 pi 
+                               )
+                               
+                               
   -- * adding fixpoint operators
   
-  Fix p f x e     -> do a_x <- fresh
+  Fix pi f x e    -> do a_x <- fresh
                         a_0 <- fresh
                         b_0 <- fresh
                         
@@ -300,7 +315,7 @@ cfa exp env = case exp of
 
                         return ( TArr b_1 (subst (s1 <> s0) a_x) (subst s1 t0)
                                , s1 <> s0
-                               , subst s1 c0 `union` constraint b_1 p
+                               , subst s1 c0 `union` constraint "Fix" b_1 pi
                                )
 
                         
@@ -345,21 +360,16 @@ cfa exp env = case exp of
                     
   -- * adding product types
   
-  Con _ n x y     -> do (t1, s1, c1) <- cfa x $ env
-                        (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
- 
-                        return ( TProd n (subst s2 t1) t2
-                               , s2 <> s1
-                               , empty
-                               )
   
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
                         
-                        a <- fresh
-                        b <- fresh
+                        a_x <- fresh
+                        a_y <- fresh
                         
-                        s2 <- t1 `u` TProd n a b
-                        (t3, s3, c3) <- cfa e2 . (y ~> b) . (x ~> a) . fmap (subst (s2 <> s1)) $ env
+                        b_0 <- fresh
+                        
+                        s2 <- t1 `u` TProd b_0 n a_x a_y
+                        (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) . fmap (subst $ s2 <> s1) $ env
 
                         return ( t3
                                , s3 <> s2 <> s1

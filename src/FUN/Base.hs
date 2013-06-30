@@ -21,11 +21,11 @@ data Lit
 data Expr
   = Lit Lit
   | Var Name
+  | Fix Label Name Name Expr
   | Abs Label Name Expr
   | App Expr Expr
   | Bin Name Expr Expr
   | Let Name Expr Expr
-  | Fix Label Name Name Expr
   | Con Label Name Expr Expr      -- ^ con constructor arg0 arg1
   | Des Expr Name Name Name Expr  -- ^ as constructor arg0 arg1 destruct e1 in e2
   | ITE Expr Expr Expr
@@ -73,21 +73,32 @@ bin op x y = App (App (Var op) x) y
 
 instance Show Prog where
   show (Prog ds) = concat (map ((++"\n") . show) ds)
-  
+
+showDecl :: Bool -> Decl -> String
+showDecl cp (Decl n e) = printf "%s = %s" n (showExpr cp e)  
+      
 instance Show Decl where
-  show (Decl n e) = printf "%s = %s" n (show e)
+  show = showDecl False
+    
+showExpr :: Bool -> Expr -> String
+showExpr cp =
+  let showAnn a = if cp then "[" ++ a ++ "]" else ""
+      showExpr exp = case exp of
+        Lit l            -> show l
+        Var n            -> n
+        Abs l n e        -> printf "fun %s =%s> %s" n (showAnn l) (showExpr e)
+        Fix l f n e      -> printf "fix %s %s =%s> %s" f n (showAnn l) (showExpr e)
+        App e1 e2        -> printf "(%s %s)" (showExpr e1) (showExpr e2)
+        Bin n e1 e2      -> printf "(%s %s %s)" (showExpr e1) n (showExpr e2)
+        Let n e1 e2      -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
+        Con l nm e1 e2   -> printf "%s%s (%s,%s)" nm (showAnn l) (showExpr e1) (showExpr e2)
+        Des e1 n a b e2  -> printf "case %s of %s(%s,%s) in %s" (showExpr e1) n a b (showExpr e2)
+        ITE b e1 e2      -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)
+  in showExpr
   
 instance Show Expr where
-  show (Lit l) = show l
-  show (Var n) = n
-  show (Abs l n e) = printf "fun %s =%s> %s" n l (show e)
-  show (App e1 e2) = printf "(%s %s)" (show e1) (show e2)
-  show (Bin n e1 e2) = printf "(%s %s %s)" (show e1) n (show e2)
-  show (Let n e1 e2) = printf "let %s = %s in %s" n (show e1) (show e2)
-  show (Fix l f n e) = printf "fix %s %s =%s> %s" f n l (show e)
-  show (Con l n e1 e2) = printf "%s[%s](%s,%s)" n (show l) (show e1) (show e1)
-  show (Des e1 n a b e2) = printf "case %s of %s(%s,%s) in %s" (show e1) n a b (show e1)
-  show (ITE b e1 e2) = printf "if %s then %s else %s" (show b) (show e1) (show e2)
+  show = showExpr False
+
   
 instance Show Lit where
   show (Bool b) = show b
