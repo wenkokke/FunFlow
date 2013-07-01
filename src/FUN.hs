@@ -33,7 +33,7 @@ parseExpr = runParser "stdin" pExpr
 
 printProgram :: [Decl] -> M.Map TVar Type -> String
 printProgram p env = 
-  let annotations = False
+  let annotations = True
       
       funcType (Decl nm e) = case M.lookup nm env of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
@@ -124,7 +124,10 @@ exPairimental = fmap parseDecl $
   
 exSum = fmap parseDecl $
   [ "testL = L%Either 5"
-  , "testR = R%Either 8"
+  , "testR = R%Either false"
+  , "testLR = if false then testL else testR"
+  , "testLL = if false then testL else testL"
+  , "testRR = if false then testR else testR"
   ]
 
   

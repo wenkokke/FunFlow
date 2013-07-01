@@ -86,12 +86,14 @@ showDecl cp (Decl n e) = printf "%s = %s" n (showExpr cp e)
       
 instance Show Decl where
   show = showDecl False
-    
+
+  
 showExpr :: Bool -> Expr -> String
 showExpr cp =
   let showAnn a = if cp then "[" ++ a ++ "]" else ""
       showExpr exp = case exp of
-        Lit l            -> show l
+        Lit (Bool b)     -> case b of True -> "true"; False -> "false"
+        Lit (Integer n)  -> show n
         Var n            -> n
         Abs l n e        -> printf "fun %s =%s> %s" n (showAnn l) (showExpr e)
         Fix l f n e      -> printf "fix %s %s =%s> %s" f n (showAnn l) (showExpr e)
