@@ -41,8 +41,8 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> (pSumL <|> pSumR) <|> pDes
   pFix = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
   pLet = iI letn "let" pDecls "in" pExpr Ii
   pCon = iI con pConst (pParens $ pList2Sep pComma pExpr) Ii
-  pSumL = iI (sum L) "%L_" pConst pExpr Ii
-  pSumR = iI (sum R) "%R_" pConst pExpr Ii
+  pSumL = iI (sum L) "L%" pConst pExpr Ii
+  pSumR = iI (sum R) "R%" pConst pExpr Ii
   pDes = iI des "case" pExpr "of" pConst (pParens $ pList2Sep pComma pIdent) "in" pExpr Ii
   pITE = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
   

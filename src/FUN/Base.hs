@@ -99,7 +99,7 @@ showExpr cp =
         Bin n e1 e2      -> printf "(%s %s %s)" (showExpr e1) n (showExpr e2)
         Let n e1 e2      -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
         Con pi nm e1 e2  -> printf "%s%s (%s,%s)" nm (showAnn pi) (showExpr e1) (showExpr e2)
-        Sum lr pi nm e   -> let printSide = case lr of L -> "L_"; R -> "R_"
+        Sum lr pi nm e   -> let printSide = case lr of L -> "L%"; R -> "R%"
                             in printSide ++ nm ++ (showAnn pi) ++ " (" ++ showExpr e ++ ")"
         Des e1 n a b e2  -> printf "case %s of %s(%s,%s) in %s" (showExpr e1) n a b (showExpr e2)
         ITE b e1 e2      -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)

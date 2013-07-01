@@ -367,7 +367,7 @@ cfa exp env = case exp of
                                 
                                 return ( TSum b_0 nm t1 t2
                                        , s1
-                                       , c1 `union` constraint ("L_" ++ nm) b_0 pi
+                                       , c1 `union` constraint ("L%" ++ nm) b_0 pi
                                        )
                         R -> do (t2, s1, c1) <- cfa t $ env
                                 t1 <- fresh
@@ -376,7 +376,7 @@ cfa exp env = case exp of
                                 
                                 return ( TSum b_0 nm t1 t2
                                        , s1
-                                       , c1 `union` constraint ("R_" ++ nm) b_0 pi
+                                       , c1 `union` constraint ("R%" ++ nm) b_0 pi
                                        )
 
   Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
