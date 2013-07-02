@@ -247,7 +247,19 @@ printFlow m =
   in prefix ++ content ++ suffix
     
 organiseFlow :: Set Constraint -> Map AVar (String, Set Label)
-organiseFlow = M.unionsWith (\(nx, vx) (ny, vy) -> (nx, vx `union` vy) ) . map extractConstraint . S.toList where
+organiseFlow = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
+  mergeNames p q = case (p, q) of 
+                     -- Merge Left and Right constructor. Really nasty hacky.
+                     -- It probably deserves a real and propa solution 
+                     -- (have constraints carry more information), but that's
+                     -- a story for another day.
+                     
+                     (p1:p2:ps, q1:q2:qs) -> if p2 == q2 && q2 == '%'
+                                                then if (p1 == q1)
+                                                        then p
+                                                        else 'X' : '%' : ps
+                                                else p 
+                     (       _,        _) -> p
   extractConstraint (Constraint nm v l) = case v of
                                           AVar r -> M.singleton r (nm, S.singleton l)
 
