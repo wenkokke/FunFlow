@@ -23,7 +23,7 @@ pDecls :: Parser [Decl]
 pDecls = pList1Sep (pSymbol ";") pDecl
 
 pExpr :: Parser Expr
-pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> (pSumL <|> pSumR) <|> pDes) <<|> pBin
+pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pList) <<|> pBin
   where
   
   -- literal expressions
@@ -37,14 +37,31 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> (pSumL <|> pSumR) <|> pDes
      <<|> pParens pExpr
   
   -- simple expressions
-  pAbs = iI abs "fun" (pList1Sep pSpaces pIdent) "=>" pExpr Ii
-  pFix = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
-  pLet = iI letn "let" pDecls "in" pExpr Ii
-  pCon = iI con pConst (pParens $ pList2Sep pComma pExpr) Ii
-  pSumL = iI (sum L) "L%" pConst pExpr Ii
-  pSumR = iI (sum R) "R%" pConst pExpr Ii
-  pDes = iI des "case" pExpr "of" pConst (pParens $ pList2Sep pComma pIdent) "in" pExpr Ii
-  pITE = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
+  pAbs,pFix,pLet,pITE,pCon,pDes :: Parser Expr
+  pAbs    = iI abs "fun" (pList1Sep pSpaces pIdent) "=>" pExpr Ii
+  pFix    = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
+  pLet    = iI letn "let" pDecls "in" pExpr Ii
+  pITE    = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
+  pCon    = iI con (pUnit <|> pProd <|> pSum) Ii
+  pDes    = iI des "case" pExpr "of" (pUnUnit <|> pUnProd <|> pUnSum) Ii
+  
+  pUnit,pProd,pSum :: Parser Con
+  pUnit   = iI Unit pConst Ii
+  pProd   = iI Prod pConst "(" pExpr "," pExpr ")"Ii
+  pSum    = pSumL <|> pSumR
+    where
+    pSumL,pSumR :: Parser Con
+    pSumL = iI suml pConst ".Left"  pExpr Ii
+    pSumR = iI sumr pConst ".Right" pExpr Ii
+  
+  pUnUnit,pUnProd,pUnSum :: Parser Des
+  pUnUnit = iI ununit pConst "->" pExpr Ii
+  pUnProd = iI unprod pConst "(" pIdent "," pIdent ")" "->" pExpr Ii
+  pUnSum  = iI unsum  pConst "." "Left"  pIdent "->" pExpr
+                      pConst "." "Right" pIdent "->" pExpr Ii
+                      
+  pList :: Parser Expr
+  pList = list <$ pLBracket <*> pListSep pComma pExpr <* pRBracket
   
   -- chained expressions
   pApp = pChainl_ng (App <$ pSpaces) pAtom
