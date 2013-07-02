@@ -1,0 +1,42 @@
+\section{Type system}
+\label{sec:typesystem}
+
+Well typed programs can't go wrong. Untyped lambda calculus is never wrong.
+
+\begin{figure}
+  \prototype{Equivalence}{|rho == rho'|}
+
+  \axiom[q-refl]{|rho == rho|}\qquad%
+  \infrule[q-symm]{|rho' == rho|}{|rho == rho'|}\qquad%
+  \infrule[q-trans]{|rho == rho''|\quad|rho'' == rho'|}{|rho == rho'|}
+
+
+  \caption{Definitional equivalence of ...}
+  \label{fig:def-eq}
+\end{figure}
+
+\begin{figure}
+  \prototype{Refined typing}{|GammaHat +- e :: tauHat@rho|}
+
+  \axiom[r-chr]{|GammaHat +- u :: Char@{u}|}\qquad
+  \axiom[r-int]{|GammaHat +- z :: Integer@{z}|}\qquad
+  \axiom[r-flt]{|GammaHat +- r :: Double@{r}|}
+
+  \infrule[r-con]%
+    {|GammaHat^(D) = tauHat|}%
+    {|GammaHat +- D :: tauHat@{D}|}\qquad%
+  \infrule[r-if]%
+    {|GammaHat +- e_1 :: Bool@({True} `U` {False})|\\%
+     |GammaHat +- e_2 :: tauHat@rho|\quad%
+     |GammaHat +- e_3 :: tauHat@rho|}%
+    {|GammaHat +- if e_1 then e_2 else e_3 :: tauHat@rho|}
+
+  \infrule[r-sub]%
+    {|GammaHat +- e :: tauHat@rho'|\quad|rho' <=: rho|}%
+    {|GammaHat +- e :: tauHat@rho|}
+
+  \caption{Static semantics.}
+  \label{fig:rf-sta-semantics}
+\end{figure}
+
+

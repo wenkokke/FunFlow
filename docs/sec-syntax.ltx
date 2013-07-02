@@ -1,0 +1,25 @@
+\section{Syntax}
+\label{sec:syntax}
+
+\begin{sets}%
+  \declareset{Unicode characters}{|CHAR|}{|u|}%
+  \declareset{integers}{|INT|}{|z|}%
+  \declareset{reals}{|REAL|}{|r|}%
+  \declareset{data constructors}{|Con|}{|D|}%
+\end{sets}
+
+\begin{sets}%
+  \declareset{literals}{|Literal|}{|l|}%
+  \declareset{expressions}{|Exp|}{|e|}%
+\end{sets}
+
+\begin{bnf}%
+  \nonterminal{|l|}%
+  \alternative{|u|}%
+  \alternative{|z|}%
+  \alternative{|r|}%
+  \nonterminal{|e|}%
+  \alternative{|l|}%
+  \alternative{|D|}%
+  \alternative{|if e_1 then e_2 else e_3|}%
+\end{bnf}

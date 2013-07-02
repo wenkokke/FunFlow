@@ -1,0 +1,44 @@
+\section{Algorithm}
+\label{sec:algorithm}
+
+Using Quantum Mechanics and other obfuscation techniques, our algorithm has attained a form of True Elegance. No further explanation necessary.
+\begin{algorithm}
+  \begin{code}
+    EE^(GammaHat, l)                         =  LL^(l)
+    EE^(GammaHat, D)                         =  let_ zeta befresh_ in_ (GammaHat^(D) ^^^,^^^ zeta ^^^,^^^ {{D} <=: zeta})
+    EE^(GammaHat, if e_1 then e_2 else e_3)  =
+      let_  zeta befresh_
+            (tauHat_1,  zeta_1,  C_1)  = EE^(GammaHat, e_1)
+            (tauHat_2,  zeta_2,  C_2)  = EE^(GammaHat, e_2)
+            (tauHat_3,  zeta_3,  C_3)  = EE^(GammaHat, e_3)
+      in_   if_    tauHat_1 = Bool && tauHat_2 = tauHat_3
+            then_  (tauHat_2 ^^^,^^^ zeta ^^^,^^^ C_1 `U` C_2 `U` C_3 `U` {({True} `U` {False})>=: zeta_1} `U` {zeta_2 <=: zeta} `U` {zeta_3 <=: zeta})
+            else_  fail_
+  \end{code}
+
+  \caption{Reconstruction algorithm: expressions.}
+  \label{alg:reconstr-exp}
+\end{algorithm}
+
+
+\begin{algorithm}
+  \begin{code}
+    solve^(C) = do_
+      ...
+
+      forall_ c in_ C do_ worklist := worklist `U` {c}
+
+      ...
+      
+      while_ worklist `neq` {} do_
+        let_  C_1 `DU` {c} = worklist
+        in_   do_  ...
+                   case_ c of_
+                     ...
+      return_ analysis
+  \end{code}
+
+  \caption{Worklist algorithm for constraint solving.}
+  \label{fig:constraint-solving}
+\end{algorithm}
+
