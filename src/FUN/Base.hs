@@ -43,7 +43,7 @@ data Con
 data Des
   = UnUnit Expr
   | UnProd Name Name Expr
-  | UnSum  Name Expr Name Expr
+  | UnSum  (Name, Expr) (Name, Expr)
   deriving (Eq)
 
 type Name
@@ -96,7 +96,7 @@ cons x xs = Con noLabel "List" (Sum R (Con noLabel "Cons" (Prod x xs)))
 
 -- |Constructs a sum destructor.
 unsum :: Name -> Expr -> Name -> Name -> Expr -> (Name -> Des)
-unsum xl el nr xr er nl | nl == nr = UnSum xl el xr er
+unsum xl el nr xr er nl | nl == nr = UnSum (xl, el) (xr, er)
 
 -- |Constructs an N-ary lambda abstraction
 abs :: [Name] -> Expr -> Expr
@@ -148,7 +148,7 @@ showCon cp nm (Sum R e)  = printf "%s.Right %s" nm (showExpr cp e)
 showDes :: Bool -> Name -> Des -> String
 showDes cp nm (UnUnit e)           = printf "%s -> %s" nm (showExpr cp e)
 showDes cp nm (UnProd x y e)       = printf "%s(%s,%s) -> %s" nm x y (showExpr cp e)
-showDes cp nm (UnSum  xl el xr er) = printf "%s.Left %s -> %s ; %s.Right %s -> %s"
+showDes cp nm (UnSum  (xl, el) (xr, er)) = printf "%s.Left %s -> %s ; %s.Right %s -> %s"
                                              nm xl (showExpr cp el) nm xr (showExpr cp er)
 
 instance Show Prog where show (Prog ds) = unlines (map show ds)

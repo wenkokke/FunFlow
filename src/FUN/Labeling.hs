@@ -37,4 +37,4 @@ instance Labelable Con where
 instance Labelable Des where
   label (UnUnit e)           = do e  <- label e; return (UnUnit e)
   label (UnProd x y e)       = do e  <- label e; return (UnProd x y e)
-  label (UnSum  x1 e1 x2 e2) = do e1 <- label e1; e2 <- label e2; return (UnSum x1 e1 x2 e2)
+  label (UnSum  (x1, e1) (x2, e2)) = do e1 <- label e1; e2 <- label e2; return (UnSum (x1, e1) (x2, e2))

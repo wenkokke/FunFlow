@@ -248,18 +248,14 @@ printFlow m =
     
 organiseFlow :: Set Constraint -> Map AVar (String, Set Label)
 organiseFlow = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
-  mergeNames p q = case (p, q) of 
-                     -- Merge Left and Right constructor. Really nasty hacky.
-                     -- It probably deserves a real and propa solution 
-                     -- (have constraints carry more information), but that's
-                     -- a story for another day.
-                     
-                     (p1:p2:ps, q1:q2:qs) -> if p2 == q2 && q2 == '%'
-                                                then if (p1 == q1)
-                                                        then p
-                                                        else 'X' : '%' : ps
-                                                else p 
-                     (       _,        _) -> p
+  mergeNames p q = let (np, cp) = span (/= '.') p
+                       (nq, cq) = span (/= '.') q
+                   in if np == nq
+                         then if cp == cq
+                                 then p
+                                 else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
+                         else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
+                    
   extractConstraint (Constraint nm v l) = case v of
                                           AVar r -> M.singleton r (nm, S.singleton l)
 
@@ -378,7 +374,7 @@ cfa exp env = case exp of
                               
                               return ( TSum b_0 nm t1 t2
                                       , s1
-                                      , c1 `union` constraint ("L%" ++ nm) b_0 pi
+                                      , c1 `union` constraint (nm ++ ".Left") b_0 pi
                                       )
   Con pi nm (Sum R t)   -> do (t2, s1, c1) <- cfa t $ env
                               t1 <- fresh
@@ -387,7 +383,7 @@ cfa exp env = case exp of
                               
                               return ( TSum b_0 nm t1 t2
                                       , s1
-                                      , c1 `union` constraint ("R%" ++ nm) b_0 pi
+                                      , c1 `union` constraint (nm ++ ".Right") b_0 pi
                                       )
 
   Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 env
