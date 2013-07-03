@@ -42,22 +42,22 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pList) <<|> pBin
   pFix    = iI fix "fix" (pList2Sep pSpaces pIdent) "=>" pExpr Ii
   pLet    = iI letn "let" pDecls "in" pExpr Ii
   pITE    = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
-  pCon    = iI con (pUnit <|> pProd <|> pSum) Ii
-  pDes    = iI des "case" pExpr "of" (pUnUnit <|> pUnProd <|> pUnSum) Ii
+  pCon    = iI con pConst (pUnit <|> pProd <|> pSum) Ii
+  pDes    = iI des "case" pExpr "of" pConst (pUnUnit <|> pUnProd <|> pUnSum) Ii
   
   pUnit,pProd,pSum :: Parser Con
-  pUnit   = iI Unit pConst Ii
-  pProd   = iI Prod pConst "(" pExpr "," pExpr ")"Ii
+  pUnit   = pure Unit
+  pProd   = iI Prod "(" pExpr "," pExpr ")"Ii
   pSum    = pSumL <|> pSumR
     where
     pSumL,pSumR :: Parser Con
-    pSumL = iI suml pConst ".Left"  pExpr Ii
-    pSumR = iI sumr pConst ".Right" pExpr Ii
+    pSumL = iI suml ".Left"  pExpr Ii
+    pSumR = iI sumr ".Right" pExpr Ii
   
-  pUnUnit,pUnProd,pUnSum :: Parser Des
-  pUnUnit = iI ununit pConst "->" pExpr Ii
-  pUnProd = iI unprod pConst "(" pIdent "," pIdent ")" "->" pExpr Ii
-  pUnSum  = iI unsum  pConst "." "Left"  pIdent "->" pExpr
+  pUnUnit,pUnProd,pUnSum :: Parser (Name -> Des)
+  pUnUnit = iI ununit "->" pExpr Ii
+  pUnProd = iI unprod "(" pIdent "," pIdent ")" "->" pExpr Ii
+  pUnSum  = iI unsum         "." "Left"  pIdent "->" pExpr
                       pConst "." "Right" pIdent "->" pExpr Ii
                       
   pList :: Parser Expr

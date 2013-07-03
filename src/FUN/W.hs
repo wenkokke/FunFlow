@@ -213,16 +213,16 @@ w exp env = case exp of
                     
   -- * adding product types
   
-  Con _ n x y     -> do (t1,s1) <- w x $ env;
-                        (t2,s2) <- w y . fmap (subst s1) $ env;
-                        return (TyProd n (subst s2 t1) t2, s2<>s1)
-  
-  Des e1 n x y e2 -> do (t1,s1) <- w e1 $ env;
-                        a <- fresh;
-                        b <- fresh;
-                        s2 <- u t1 (TyProd n a b);
-                        (t3,s3) <- w e2 . (y ~> b) . (x ~> a) . fmap (subst (s2<>s1)) $ env;
-                        return (t3,s3<>s2<>s1)
+  Con _ n (Prod x y) -> do (t1,s1) <- w x $ env;
+                           (t2,s2) <- w y . fmap (subst s1) $ env;
+                           return (TyProd n (subst s2 t1) t2, s2<>s1)
+    
+  Des n e1 (UnProd x y e2) -> do (t1,s1) <- w e1 $ env;
+                                 a <- fresh;
+                                 b <- fresh;
+                                 s2 <- u t1 (TyProd n a b);
+                                 (t3,s3) <- w e2 . (y ~> b) . (x ~> a) . fmap (subst (s2<>s1)) $ env;
+                                 return (t3,s3<>s2<>s1)
   
   
   

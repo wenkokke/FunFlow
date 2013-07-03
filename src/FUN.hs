@@ -68,19 +68,19 @@ exCategory = fmap parseDecl $
 
 exPair = fmap parseDecl $
   [ "pair x y = Pair (x,y)"
-  , "fst p = case p of Pair(x,y) in x"
-  , "snd p = case p of Pair(x,y) in y"
-  , "swap p = case p of Pair (x, y) in Pair (y, x)"
+  , "fst p = case p of Pair(x,y) -> x"
+  , "snd p = case p of Pair(x,y) -> y"
+  , "swap p = case p of Pair (x, y) -> Pair (y, x)"
   ]
 
 exCurry = fmap parseDecl $
   [ "curry f   = fun x y => let p = Pair (x, y) in f p"
-  , "uncurry f = fun p => case p of Pair (x, y) in f x y"
+  , "uncurry f = fun p => case p of Pair (x, y) -> f x y"
   ]
   
 exMap = fmap parseDecl $
-  [ "mapFst f p = case p of Pair (x, y) in Pair (f x, y)"
-  , "mapSnd g p = case p of Pair (x, y) in Pair (x, g y)"
+  [ "mapFst f p = case p of Pair (x, y) -> Pair (f x, y)"
+  , "mapSnd g p = case p of Pair (x, y) -> Pair (x, g y)"
   , "mapPair f g = compose (mapFst f) (mapSnd g)"
   ]
   
@@ -95,12 +95,12 @@ exFunction = fmap parseDecl $
   
   , "const x y = x"
 
-  , "ap w = fun f a => case f of Pair (r, g) in case a of Pair (s, x) in Pair (w r s, g x)"
-  , "bind w = fun f a => case a of Pair (x, v) in case f v of Pair (y, b) in Pair (w x y, b)" 
+  , "ap w = fun f a => case f of Pair (r, g) -> case a of Pair (s, x) -> Pair (w r s, g x)"
+  , "bind w = fun f a => case a of Pair (x, v) -> case f v of Pair (y, b) -> Pair (w x y, b)" 
   ]
 
 exSilly = fmap parseDecl $
-  [ "silly1 p = case p of Pair(f,g) in compose f g"
+  [ "silly1 p = case p of Pair(f,g) -> compose f g"
   , "silly2 p = compose (fst p) (snd p)"
   , "silly3 p x = apply (compose (fst p) (snd p)) (id x)"
   ]
@@ -119,12 +119,12 @@ exLoop = fmap parseDecl $
 exPairimental = fmap parseDecl $
   [ "pA = Pair (3, 5)"
   , "pB = Pair (7, 11)"
-  , "f p = case p of Pair (x, y) in x" 
+  , "f p = case p of Pair (x, y) -> x" 
   ]
   
 exSum = fmap parseDecl $
-  [ "testL = L%Either 5"
-  , "testR = R%Either false"
+  [ "testL = Either.Left 5"
+  , "testR = Either.Right false"
   , "testLR = if false then testL else testR"
   , "testLL = if false then testL else testL"
   , "testRR = if false then testR else testR"

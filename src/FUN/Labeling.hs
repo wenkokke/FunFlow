@@ -25,16 +25,16 @@ instance Labelable Expr where
   label (Bin n e1 e2)     = do e1 <- label e1 ; e2 <- label e2 ; return (Bin n e1 e2)
   label (Let n e1 e2)     = do e1 <- label e1 ; e2 <- label e2 ; return (Let n e1 e2)
   label (Fix _ f n e)     = do l  <- supply   ; e  <- label e  ; return (Fix l f n e)
-  label (Con _ c)         = do l  <- supply   ; c  <- label c  ; return (Con l c)
-  label (Des e d)         = do e  <- label e  ; d  <- label d  ; return (Des e d)
+  label (Con _ nm c)      = do l  <- supply   ; c  <- label c  ; return (Con l nm c)
+  label (Des nm e d)      = do e  <- label e  ; d  <- label d  ; return (Des nm e d)
   label (ITE b e1 e2)     = do b  <- label b  ; e1 <- label e1 ; e2 <- label e2; return (ITE b e1 e2)
   
 instance Labelable Con where
-  label u@(Unit _)   = return u
-  label (Prod n x y) = do x <- label x; y <- label y; return (Prod n x y)
-  label (Sum n lr e) = do e <- label e; return (Sum n lr e)
+  label Unit = return Unit
+  label (Prod x y) = do x <- label x; y <- label y; return (Prod x y)
+  label (Sum lr e) = do e <- label e; return (Sum lr e)
   
 instance Labelable Des where
-  label (UnUnit n e)           = do e  <- label e; return (UnUnit n e)
-  label (UnProd n x y e)       = do e  <- label e; return (UnProd n x y e)
-  label (UnSum  n x1 e1 x2 e2) = do e1 <- label e1; e2 <- label e2; return (UnSum n x1 e1 x2 e2)
+  label (UnUnit e)           = do e  <- label e; return (UnUnit e)
+  label (UnProd x y e)       = do e  <- label e; return (UnProd x y e)
+  label (UnSum  x1 e1 x2 e2) = do e1 <- label e1; e2 <- label e2; return (UnSum x1 e1 x2 e2)

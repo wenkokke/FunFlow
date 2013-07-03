@@ -361,47 +361,46 @@ cfa exp env = case exp of
                                )
                     
   -- * adding product types
-  Con pi nm x y   -> do (t1, s1, c1) <- cfa x $ env
-                        (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
- 
-                        b_0 <- fresh
- 
-                        return ( TProd b_0 nm (subst s2 t1) t2
-                               , s2 <> s1
-                               , subst s2 c1 `union` c1 `union` constraint nm b_0 pi 
-                               )
+  Con pi nm (Prod x y)   -> do (t1, s1, c1) <- cfa x $ env
+                               (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
+      
+                               b_0 <- fresh
+      
+                               return ( TProd b_0 nm (subst s2 t1) t2
+                                      , s2 <> s1
+                                      , subst s2 c1 `union` c1 `union` constraint nm b_0 pi 
+                                      )
   -- * adding sum types
-  Sum lr pi nm t   -> case lr of
-                        L -> do (t1, s1, c1) <- cfa t $ env
-                                t2 <- fresh
-                                
-                                b_0 <- fresh
-                                
-                                return ( TSum b_0 nm t1 t2
-                                       , s1
-                                       , c1 `union` constraint ("L%" ++ nm) b_0 pi
-                                       )
-                        R -> do (t2, s1, c1) <- cfa t $ env
-                                t1 <- fresh
-                                
-                                b_0 <- fresh
-                                
-                                return ( TSum b_0 nm t1 t2
-                                       , s1
-                                       , c1 `union` constraint ("R%" ++ nm) b_0 pi
-                                       )
+  Con pi nm (Sum L t)   -> do (t1, s1, c1) <- cfa t $ env
+                              t2 <- fresh
+                              
+                              b_0 <- fresh
+                              
+                              return ( TSum b_0 nm t1 t2
+                                      , s1
+                                      , c1 `union` constraint ("L%" ++ nm) b_0 pi
+                                      )
+  Con pi nm (Sum R t)   -> do (t2, s1, c1) <- cfa t $ env
+                              t1 <- fresh
+                              
+                              b_0 <- fresh
+                              
+                              return ( TSum b_0 nm t1 t2
+                                      , s1
+                                      , c1 `union` constraint ("R%" ++ nm) b_0 pi
+                                      )
 
-  Des e1 n x y e2 -> do (t1, s1, c1) <- cfa e1 env
-                        
-                        a_x <- fresh
-                        a_y <- fresh
-                        
-                        b_0 <- fresh
-                        
-                        s2 <- t1 `u` TProd b_0 n a_x a_y
-                        (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) . fmap (subst $ s2 <> s1) $ env
+  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 env
+                                  
+                                    a_x <- fresh
+                                    a_y <- fresh
+                                    
+                                    b_0 <- fresh
+                                    
+                                    s2 <- t1 `u` TProd b_0 nm a_x a_y
+                                    (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) . fmap (subst $ s2 <> s1) $ env
 
-                        return ( t3
-                               , s3 <> s2 <> s1
-                               , empty
-                               )
+                                    return ( t3
+                                           , s3 <> s2 <> s1
+                                           , empty
+                                           )
