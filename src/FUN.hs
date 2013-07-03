@@ -9,7 +9,7 @@ import FUN.Parsing                      -- ^ parser
 import FUN.Labeling                     -- ^ labeling
 import FUN.W (runW)                     -- ^ type inference
 import FUN.CFA 
-  ( runCFA, TypeError, Env, Constraint, showType
+  ( runCFA, prelude, TypeError, Env, Constraint, showType
   , printFlow, solveConstraints, TVar (..), Type (..)
   ) -- ^ control flow analysis
 
@@ -59,7 +59,7 @@ main =
                        ++ annInfo     ++ "\n\n"
                        
       env :: Either TypeError (Env, S.Set Constraint)
-      env = runCFA prog
+      env = runCFA prelude prog
   in either print (putStrLn . put) env
         
 exCategory = fmap parseDecl $

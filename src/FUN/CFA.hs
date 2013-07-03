@@ -25,6 +25,9 @@ import Control.Monad.Trans (lift)
 import Data.Set ( Set, empty, union )
 import qualified Data.Set as Set
 
+prelude :: Env
+prelude = mempty
+
 -- * Type definitions
 
 type TVar = Name -- Type Variable
@@ -47,6 +50,7 @@ data Type
 instance Show Type where
   show = showType False
 
+  
 showType :: Bool -> Type -> String
 showType cp = 
   let printAnn (FVar s) = if cp then "{" ++ s ++ "}" else ""
@@ -82,9 +86,8 @@ showType cp =
 
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
-runCFA :: [Decl] -> Either TypeError (Env, Set Constraint)
-runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
-  where
+runCFA :: Env -> [Decl] -> Either TypeError (Env, Set Constraint)
+runCFA env = refreshAll . withFreshVars . foldl addDecl ( return (env, empty) ) where
   addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r
                             (t, s1, c1) <- cfa e $ env
@@ -226,8 +229,8 @@ unifyScale :: Scale -> Scale -> CFA Env
 unifyScale s1 s2 = 
   case (s1, s2) of
     (SVar v1, SVar v2) -> return $ singleton (v1, s2)
-    (SVar v1,       _) -> undefined
-    (_      , SVar v2) -> undefined
+    (SVar v1,       _) -> return $ singleton (v1, s2)
+    (_      , SVar v2) -> return $ singleton (v2, s1)
     (_      ,       _) -> 
       if s1 == s2
          then return $ mempty
@@ -238,7 +241,18 @@ unifyScale s1 s2 =
                              
 
 unifyBase :: Base -> Base -> CFA Env
-unifyBase b1 b2 = return $ mempty
+unifyBase b1 b2 = 
+  case (b1, b2) of
+    (BVar v1, BVar v2) -> return $ singleton (v1, b2)
+    (BVar v1,       _) -> return $ singleton (v1, b2)
+    (_      , BVar v2) -> return $ singleton (v2, b1)
+    (_      ,       _) -> 
+      if b1 == b2
+         then return $ mempty
+              -- Should be made a warning if we don't want the analysis to 
+              -- reject programs that are valid in the underlying
+              -- type system.
+         else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
     
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> CFA Env
