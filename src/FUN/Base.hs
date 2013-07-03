@@ -51,9 +51,16 @@ data Lit
   | Integer Scale Base Integer
   deriving (Eq)
   
-data LR = L | R
-  deriving (Eq)
   
+data Op 
+  = Add | Sub | Mul | Div  
+    deriving Eq
+instance Show Op where
+  show Add = "+"
+  show Sub = "-"
+  show Mul = "*"
+  show Div = "/"
+    
 data Expr
   = Lit  Lit
   | Var  Name
@@ -63,9 +70,16 @@ data Expr
   | Bin  Name Expr Expr
   | Let  Name Expr Expr
   | ITE  Expr Expr Expr
+
   | Con  Label Name Con
   | Des  Name Expr  Des
+
+  | Operator Op Expr Expr
   deriving (Eq)
+
+data LR = L | R
+  deriving (Eq)
+
   
 data Con
   = Unit
@@ -170,8 +184,11 @@ showExpr cp =
         Bin n e1 e2     -> printf "(%s %s %s)" (showExpr e1) n (showExpr e2)
         Let n e1 e2     -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
         ITE b e1 e2     -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)
+
         Con l nm  con   -> printf "%s%s" (showAnn l) (showCon cp nm con)
         Des nm exp des  -> printf "case %s of %s" (showExpr exp) (showDes cp nm des)
+                                        
+        Operator op x y -> printf "(%s %s %s%)" (showExpr x) (show op) (showExpr y)                                    
   in showExpr
 
 showCon :: Bool -> Name -> Con -> String

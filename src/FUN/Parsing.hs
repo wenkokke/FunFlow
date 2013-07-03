@@ -27,7 +27,7 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pList) <<|> pBin
   where
   
   -- literal expressions
-  pLit = Integer SKelvin BNone <$> pInteger
+  pLit = Integer SUnit BNone <$> pInteger
      <|> Bool True  <$  pSymbol "true"
      <|> Bool False <$  pSymbol "false"
     

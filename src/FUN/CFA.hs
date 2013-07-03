@@ -30,17 +30,18 @@ import qualified Data.Set as Set
 type TVar = Name -- Type Variable
 type FVar = Name -- Flow Variable
 
-data FAnn 
+data Flow 
   = FVar FVar 
     deriving (Eq, Ord, Show)
       
 data Type
   = TVar  TVar
-  | TCon  TVar
-  | TArr  FAnn Type Type
-  | TProd FAnn Name Type Type
-  | TSum  FAnn Name Type Type
-  | TUnit FAnn Name
+  | TBool
+  | TInt  Scale Base
+  | TArr  Flow Type Type
+  | TProd Flow Name Type Type
+  | TSum  Flow Name Type Type
+  | TUnit Flow Name
   deriving (Eq)
     
 instance Show Type where
@@ -50,8 +51,14 @@ showType :: Bool -> Type -> String
 showType cp = 
   let printAnn (FVar s) = if cp then "{" ++ s ++ "}" else ""
       showType ty = case ty of 
-        TCon  n     -> n
-        TVar  n     -> n
+        TBool -> "Bool"
+        TInt s b -> "Integer" ++ showScaleBase where
+          showScaleBase = if s == SUnit
+                             then "" else
+                          if b == BNone
+                             then "{" ++ show s ++ "}"
+                             else "{" ++ show s ++ "/" ++ show b ++ "}" 
+        TVar n -> n
         TArr  v a b -> printf "%s -%s> %s" (wrap a) (printAnn v) (wrap b)
             where
             wrap ty@(TArr _ _ _) = printf "(%s)" (showType ty)
@@ -70,6 +77,7 @@ showType cp =
             wrap ty                 = showType ty
         TUnit v nm -> printf "%s%s()" nm (printAnn v)
   in showType
+  
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
@@ -114,21 +122,19 @@ refresh t1 = do subs <- forM (ftv t1) $ \a ->
 
 -- |Returns the set of free type variables in a type.
 ftv :: Type -> [TVar]
-ftv (TCon  _)       = [ ]
+ftv TBool           = [ ]
+ftv (TInt _ _)      = [ ]
 ftv (TVar  n)       = [n]
 ftv (TArr  _   a b) = L.union (ftv a) (ftv b)
 ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TUnit _ _)     = [ ]
 
--- |Returns the set of free annotation variables in a type.
-fav :: Type -> [FVar]
-fav (TCon      _) = [ ]
-fav (TVar      _) = [ ]
-fav (TArr  v   a b) = fav a `L.union` fav b `L.union` [case v of (FVar r) -> r]
-fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (FVar r) -> r]
-fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (FVar r) -> r]
-fav (TUnit v _)     = [case v of (FVar r) -> r]
+emptyExtendedEnv = ExtendedEnv { 
+  cfaMap = M.empty, 
+  scaleMap = M.empty,
+  baseMap = M.empty
+}
 
 class Singleton w k where
   singleton :: k -> w
@@ -139,14 +145,21 @@ instance Singleton (Map k a) (k, a) where
 instance Singleton (Set k) k where
   singleton = S.singleton
   
-instance Singleton Env (FVar, FAnn) where
-  singleton (k, a) = (M.empty, ExtendedEnv $ M.singleton k a)
+instance Singleton Env (FVar, Flow) where
+  singleton (k, a) = (M.empty, emptyExtendedEnv { cfaMap = M.singleton k a })
 
 instance Singleton Env (TVar, Type) where
-  singleton (k, a) = (M.singleton k a, ExtendedEnv $ M.empty)
+  singleton (k, a) = (M.singleton k a, emptyExtendedEnv)
 
+instance Singleton Env (SVar, Scale) where
+  singleton (k, a) = (M.empty, emptyExtendedEnv { scaleMap = M.singleton k a })
 
-data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar FAnn }   
+instance Singleton Env (BVar, Base) where
+  singleton (k, a) = (M.empty, emptyExtendedEnv { baseMap = M.singleton k a })
+
+  
+
+data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar Flow, scaleMap :: Map SVar Scale, baseMap :: Map BVar Base }   
 type Env = (Map TVar Type, ExtendedEnv)
 
 class Subst w where
@@ -155,15 +168,23 @@ class Subst w where
   
 -- |Substitutes a type for a type variable in a type.
 instance Subst Type where
-  subst m c@(TCon _)    = c
-  subst m v@(TVar n)    = M.findWithDefault v n (fst m)
+  subst m TBool = TBool
+  subst m r@(TInt _ _)     = r
+  subst m v@(TVar n)       = M.findWithDefault v n (fst m)
   subst m (TArr  v    a b) = TArr (subst m v) (subst m a) (subst m b)
   subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
   subst m (TUnit v nm)     = TUnit (subst m v) nm
   
-instance Subst FAnn where
+instance Subst Flow where
   subst m v@(FVar n) = M.findWithDefault v n (cfaMap $ snd m)
+  
+instance Subst Scale where
+  subst m v@(SVar n) = M.findWithDefault v n (scaleMap $ snd m)
+
+instance Subst Base where
+  subst m v@(BVar n) = M.findWithDefault v n (baseMap $ snd m)
+
   
 instance Subst (Set Constraint) where
   subst m cs = flip Set.map cs $ \(FlowConstraint nm v r) -> FlowConstraint nm (subst m v) r
@@ -179,6 +200,7 @@ data TypeError
   | CannotUnify     Type Type -- ^ thrown when types cannot be unified
   | OtherError      String    -- ^ stores miscellaneous errors
   | NoMsg                     -- ^ please don't be a jackass; don't use this
+  | MeasureError    String 
   deriving Eq
 
 instance Error TypeError where
@@ -193,18 +215,39 @@ instance Show TypeError where
   show (CannotUnify    a b) = printf "Cannot unify %s with %s" (show a) (show b)
   show (OtherError     msg) = msg
   show (NoMsg             ) = "nope"
-
+  show (MeasureError     s) = "Unit of Measure Error: " ++ s
 type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: TVar -> Type -> Bool
 occurs n t = n `elem` (ftv t)
 
+unifyScale :: Scale -> Scale -> CFA Env
+unifyScale s1 s2 = 
+  case (s1, s2) of
+    (SVar v1, SVar v2) -> return $ singleton (v1, s2)
+    (SVar v1,       _) -> undefined
+    (_      , SVar v2) -> undefined
+    (_      ,       _) -> 
+      if s1 == s2
+         then return $ mempty
+              -- Should be made a warning if we don't want the analysis to 
+              -- reject programs that are valid according to the underlying
+              -- type system.
+         else throwError $ MeasureError $ "incompatible scales used: " ++ show s1 ++ " vs. " ++ show s2
+                             
+
+unifyBase :: Base -> Base -> CFA Env
+unifyBase b1 b2 = return $ mempty
+    
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> CFA Env
-u t1@(TCon a) t2@(TCon b)
-  | a == b        = return $ mempty
-  | otherwise     = throwError (CannotUnify t1 t2)
+u TBool TBool = return $ mempty
+u (TInt r1 b1) (TInt r2 b2)
+                  = do s0 <- unifyScale r1 r2
+                       s1 <- unifyBase b1 b2
+                       return (s1 <> s0)
+                  
 u (TArr (FVar p1) a1 b1) (TArr p2 a2 b2)
                   = do let s0 = singleton (p1, p2)
                        s1 <- subst s0 a1 `u` subst s0 a2
@@ -237,8 +280,8 @@ u t1@(TVar n) t2
 u t1 t2           = throwError (CannotUnify t1 t2)
 
 typeOf :: Lit -> Type
-typeOf (Bool    _) = TCon "Bool"
-typeOf (Integer _ _ _) = TCon "Integer"
+typeOf (Bool    _) = TBool
+typeOf (Integer s b _) = TInt s b
 
 class Fresh t where
   fresh :: CFA t
@@ -246,24 +289,28 @@ class Fresh t where
 instance Fresh Type where
   fresh = fmap TVar $ lift (lift supply)
   
-instance Fresh FAnn where
+instance Fresh Flow where
   fresh = fmap FVar $ lift supply
 
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(m, w) -> (M.insert x t m, w)
 
 (<>) :: Env -> Env -> Env
-(<>) m@(s2, ExtendedEnv a2) (s1, ExtendedEnv a1) = ( s2 `M.union` (subst m <$> s1)
-                                                 , ExtendedEnv $ a2 `M.union` (subst m <$> a1)
-                                                 )
+(<>) m@(s2, a2) (s1, a1) = ( s2 `M.union` (subst m <$> s1)
+                           , ExtendedEnv { 
+                               cfaMap   = cfaMap   a2 `M.union` (subst m <$> cfaMap   a1),
+                               scaleMap = scaleMap a2 `M.union` (subst m <$> scaleMap a1), 
+                               baseMap  = baseMap  a2 `M.union` (subst m <$> baseMap  a1)   
+                             }
+                           )
 
 mempty :: Env
-mempty = (M.empty, ExtendedEnv $ M.empty)
+mempty = (M.empty, emptyExtendedEnv)
 
 mconcat :: [Env] -> Env
 mconcat = foldr (<>) mempty
 
-data Constraint = FlowConstraint String FAnn Label
+data Constraint = FlowConstraint String Flow Label
   deriving (Eq, Ord, Show)
   
 printFlow :: Map FVar (String, Set Label) -> String
@@ -299,7 +346,7 @@ f $* a = \d ->
 
 infixr 1 <&>
 
-constraint :: String -> FAnn -> Label -> Set Constraint
+constraint :: String -> Flow -> Label -> Set Constraint
 constraint nm a l = singleton $ FlowConstraint nm a l
 
 class Bifunctor w where
@@ -383,7 +430,7 @@ cfa exp env = case exp of
                         (t1, s1, c1) <- cfa e1 $ s0 <> env
                         (t2, s2, c2) <- cfa e2 $ s1 <> s0 <> env
                         
-                        s3 <- subst (s2 <> s1) t0 `u` TCon "Bool"
+                        s3 <- subst (s2 <> s1) t0 `u` TBool
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
 
                         return ( subst (s4 <> s3) t2
@@ -429,7 +476,7 @@ cfa exp env = case exp of
                                       , c1 `union` constraint (nm ++ ".Right") b_0 pi
                                       )
 
-  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- cfa e1 env
+  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- cfa e1 $ env
                                              
                                   b_0 <- fresh
                                              
@@ -442,7 +489,7 @@ cfa exp env = case exp of
                                          , c3 `union` c1
                                          )
 
-  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 env
+  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 $ env
                                   
                                     a_x <- fresh
                                     a_y <- fresh
@@ -457,7 +504,7 @@ cfa exp env = case exp of
                                            , subst (s3 <> s2) c1 `union` c3
                                            )
                                            
-  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- cfa e1 env
+  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- cfa e1 $ env
                                              
                                               a_x <- fresh
                                               a_y <- fresh
@@ -477,3 +524,14 @@ cfa exp env = case exp of
                                                        subst (s5 <> s4)             c3 `union` 
                                                        subst  s5                    c4 
                                                      )
+
+  Operator op x y -> do (tx, s1, c1) <- cfa x $ env    
+                        (ty, s2, c2) <- cfa y $ s1 <> env
+                        
+                        s3 <- tx `u` ty
+                        
+                        return ( subst s3 tx
+                               , s3 <> s2 <> s1
+                               , c1 `union` c2
+                               )
+                        
