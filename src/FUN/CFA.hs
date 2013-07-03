@@ -49,7 +49,6 @@ data Type
     
 instance Show Type where
   show = showType False
-
   
 showType :: Bool -> Type -> String
 showType cp = 
@@ -82,23 +81,17 @@ showType cp =
         TUnit v nm -> printf "%s%s()" nm (printAnn v)
   in showType
   
--- * Algorithm W for Type Inference
+data Constraint = FlowConstraint String Flow Label
+  deriving (Eq, Ord, Show)
 
--- |Runs algorithm W on a list of declarations, making each previous
---  declaration an available expression in the next.
-runCFA :: Env -> [Decl] -> Either TypeError (Env, Set Constraint)
-runCFA env = refreshAll . withFreshVars . foldl addDecl ( return (env, empty) ) where
-  addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
-  addDecl r (Decl x e) = do (env, c0) <- r
-                            (t, s1, c1) <- cfa e $ env
-                            
-                            let s2 = (M.empty, snd s1)
-                                
-                            return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
-                                   , subst s1 c0 `union` c1
-                                   )
-
-
+printFlow :: Map FVar (String, Set Label) -> String
+printFlow m = 
+  let prefix = "{\n"
+      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
+      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
+      suffix = "}"
+  in prefix ++ content ++ suffix
+  
 -- |Provides an infinite stream of names to things in the @CFA@ monad,
 --  reducing it to just an @Either@ value containing perhaps a TypeError.
 withFreshVars :: CFA a -> Either TypeError a
@@ -160,15 +153,11 @@ instance Singleton Env (SVar, Scale) where
 instance Singleton Env (BVar, Base) where
   singleton (k, a) = (M.empty, emptyExtendedEnv { baseMap = M.singleton k a })
 
-  
 
-data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar Flow, scaleMap :: Map SVar Scale, baseMap :: Map BVar Base }   
-type Env = (Map TVar Type, ExtendedEnv)
 
 class Subst w where
   subst :: Env -> w -> w
-
-  
+ 
 -- |Substitutes a type for a type variable in a type.
 instance Subst Type where
   subst m TBool = TBool
@@ -188,11 +177,21 @@ instance Subst Scale where
 instance Subst Base where
   subst m v@(BVar n) = M.findWithDefault v n (baseMap $ snd m)
 
-  
 instance Subst (Set Constraint) where
   subst m cs = flip Set.map cs $ \(FlowConstraint nm v r) -> FlowConstraint nm (subst m v) r
   
+  
+  
+class Fresh t where
+  fresh :: CFA t
 
+instance Fresh Type where
+  fresh = fmap TVar $ lift (lift supply)
+  
+instance Fresh Flow where
+  fresh = fmap FVar $ lift supply
+
+  
 
 -- |Representation for possible errors in algorithm W.
 data TypeError
@@ -219,11 +218,17 @@ instance Show TypeError where
   show (OtherError     msg) = msg
   show (NoMsg             ) = "nope"
   show (MeasureError     s) = "Unit of Measure Error: " ++ s
-type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
+
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: TVar -> Type -> Bool
 occurs n t = n `elem` (ftv t)
+
+data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar Flow, scaleMap :: Map SVar Scale, baseMap :: Map BVar Base }   
+
+type Env = (Map TVar Type, ExtendedEnv)
+
+type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 unifyScale :: Scale -> Scale -> CFA Env
 unifyScale s1 s2 = 
@@ -296,16 +301,14 @@ u t1 t2           = throwError (CannotUnify t1 t2)
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TBool
 typeOf (Integer s b _) = TInt s b
+ 
+($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
+f $* a = \d -> 
+  case M.lookup a f of
+    Just b  -> pure b
+    Nothing -> d
 
-class Fresh t where
-  fresh :: CFA t
-
-instance Fresh Type where
-  fresh = fmap TVar $ lift (lift supply)
-  
-instance Fresh Flow where
-  fresh = fmap FVar $ lift supply
-
+ 
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(m, w) -> (M.insert x t m, w)
 
@@ -317,61 +320,16 @@ x ~> t = \(m, w) -> (M.insert x t m, w)
                                baseMap  = baseMap  a2 `M.union` (subst m <$> baseMap  a1)   
                              }
                            )
-
 mempty :: Env
 mempty = (M.empty, emptyExtendedEnv)
 
 mconcat :: [Env] -> Env
 mconcat = foldr (<>) mempty
-
-data Constraint = FlowConstraint String Flow Label
-  deriving (Eq, Ord, Show)
-  
-printFlow :: Map FVar (String, Set Label) -> String
-printFlow m = 
-  let prefix = "{\n"
-      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
-      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
-      suffix = "}"
-  in prefix ++ content ++ suffix
-    
-solveConstraints :: Set Constraint -> Map FVar (String, Set Label)
-solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
-  mergeNames p q = let (np, cp) = span (/= '.') p
-                       (nq, cq) = span (/= '.') q
-                   in if np == nq
-                         then if cp == cq
-                                 then p
-                                 else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
-                         else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
-                    
-  extractConstraint (FlowConstraint nm v l) = case v of
-                                          FVar r -> M.singleton r (nm, S.singleton l)
-
-  
-($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
-f $* a = \d -> 
-  case M.lookup a f of
-    Just b  -> pure b
-    Nothing -> d
-
-(<&>) :: Functor f => f a -> (a -> b) -> f b
-(<&>) = flip fmap
-
-infixr 1 <&>
-
+ 
 constraint :: String -> Flow -> Label -> Set Constraint
-constraint nm a l = singleton $ FlowConstraint nm a l
+constraint nm a l = singleton $ FlowConstraint nm a l                               
 
-class Bifunctor w where
-  bimap :: (a -> x) -> (b -> y) -> w a b -> w x y
-  
-instance Bifunctor (,) where
-  bimap f g (a, b) = (f a, g b)
-  
-lmap f = bimap f id
-rmap g = bimap id g
-
+    
 -- |Algorithm W for type inference.
 cfa :: Expr -> Env -> CFA (Type, Env, Set Constraint)
 cfa exp env = case exp of
@@ -548,4 +506,35 @@ cfa exp env = case exp of
                                , s3 <> s2 <> s1
                                , c1 `union` c2
                                )
-                        
+
+solveConstraints :: Set Constraint -> Map FVar (String, Set Label)
+solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
+  mergeNames p q = let (np, cp) = span (/= '.') p
+                       (nq, cq) = span (/= '.') q
+                   in if np == nq
+                         then if cp == cq
+                                 then p
+                                 else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
+                         else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
+                    
+  extractConstraint (FlowConstraint nm v l) = case v of
+                                          FVar r -> M.singleton r (nm, S.singleton l)
+
+  
+                               
+-- * Algorithm W for Type Inference
+
+-- |Runs algorithm W on a list of declarations, making each previous
+--  declaration an available expression in the next.
+runCFA :: Env -> [Decl] -> Either TypeError (Env, Set Constraint)
+runCFA env = refreshAll . withFreshVars . foldl addDecl ( return (env, empty) ) where
+  addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
+  addDecl r (Decl x e) = do (env, c0) <- r
+                            (t, s1, c1) <- cfa e $ env
+                            
+                            let s2 = (M.empty, snd s1)
+                                
+                            return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
+                                   , subst s1 c0 `union` c1
+                                   )
+
