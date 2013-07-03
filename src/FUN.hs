@@ -135,8 +135,16 @@ exSum = fmap parseDecl $
  ++ "                       Either.Right y -> y"
   , "killSumR p = case p of Either.Left x -> x"
  ++ "                       Either.Right y -> false"
+  , "tester u = case u of Nat.Left a -> case a of () -> false"
+ ++ "                     Nat.Right a -> a"
   ]
 
+exNats = fmap parseDecl $
+  [ "add a b = case a of"
+ ++ "               Nat.Left u -> case u of () -> b"
+ ++ "               Nat.Right g -> Nat.Right (add g b)"
+  ]
+  
 exUnion = concat $
   [ exCategory
   , exPair
@@ -149,6 +157,7 @@ exUnion = concat $
   , exPairimental
   , exSum
   ]
+  
   
 example = runLabel $ exUnion
   

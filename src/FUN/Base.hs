@@ -57,6 +57,9 @@ noLabel = ""
   
 -- * Syntactic sugar for constructing complex structures
 
+unit :: Expr
+unit = Con noLabel "()" Unit
+
 -- |Constructs a constructor... whoa.
 con :: Name -> Con -> Expr
 con = Con noLabel
@@ -67,8 +70,8 @@ des :: Expr -> Name -> (Name -> Des) -> Expr
 des e nm f = Des nm e (f nm)
 
 -- |Constructs a unit destructor.
-ununit :: Expr -> (Name -> Des)
-ununit e _ = UnUnit e
+ununit :: Expr -> Expr -> Expr
+ununit e1 e2 = Des "()" e1 (UnUnit e2) 
 
 -- |Constructs a product destructor.
 unprod :: Name -> Name -> Expr -> (Name -> Des)
