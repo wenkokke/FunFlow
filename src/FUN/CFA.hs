@@ -398,8 +398,9 @@ cfa exp env = case exp of
 
                                     return ( t3
                                            , s3 <> s2 <> s1
-                                           , empty
+                                           , subst (s3 <> s2) c1 `union` c3
                                            )
+                                           
   Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- cfa e1 env
                                              
                                               a_x <- fresh
@@ -416,7 +417,9 @@ cfa exp env = case exp of
                                              
                                               return ( subst s5 tx
                                                      , s5 <> s4 <> s3 <> s2 <> s1
-                                                     , empty
+                                                     , subst (s5 <> s4 <> s3 <> s2) c1 `union` 
+                                                       subst (s5 <> s4)             c3 `union` 
+                                                       subst  s5                    c4 
                                                      )
                                              
                                              
