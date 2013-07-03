@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
 module FUN.CFA where
 
@@ -12,7 +12,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List as L (union)
 
-import Data.Monoid hiding ((<>), Sum (..) )
+-- import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join)
@@ -22,7 +22,7 @@ import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply, SupplyT, supply, evalSupply, evalSupplyT)
 import Control.Monad.Trans (lift)
 
-import Data.Set ( Set, empty, singleton, union )
+import Data.Set ( Set, empty, union )
 import qualified Data.Set as Set
 
 -- * Type definitions
@@ -101,15 +101,15 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
 
 -- |Refreshes all entries in a type environment.
 refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
-refreshAll env = do ((env, w), c) <- env;
-                    env <- mapM (withFreshVars . refresh) env
-                    return ((env, w), c) 
+refreshAll env = do (env, c) <- env;
+                    m <- mapM (withFreshVars . refresh) $ fst env
+                    return ((m, snd env), c) 
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> CFA Type
 refresh t1 = do subs <- forM (ftv t1) $ \a ->
-                          do b <- fresh;
-                             return (M.singleton a b, M.empty)
+                          do b <- fresh :: CFA Type
+                             return $ singleton (a, b)
                 return $ subst (mconcat subs) t1
 
 -- |Returns the set of free type variables in a type.
@@ -130,7 +130,24 @@ fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TUnit v _)     = [case v of (AVar r) -> r]
 
-type Env = (Map TVar Type, Map AVar Ann)
+class Singleton w k where
+  singleton :: k -> w
+
+instance Singleton (Map k a) (k, a) where
+  singleton = uncurry M.singleton
+  
+instance Singleton (Set k) k where
+  singleton = S.singleton
+  
+instance Singleton Env (AVar, Ann) where
+  singleton (k, a) = (M.empty, ExtendedEnv $ M.singleton k a)
+
+instance Singleton Env (TVar, Type) where
+  singleton (k, a) = (M.singleton k a, ExtendedEnv $ M.empty)
+
+
+data ExtendedEnv = ExtendedEnv { cfaMap :: Map AVar Ann }   
+type Env = (Map TVar Type, ExtendedEnv)
 
 class Subst w where
   subst :: Env -> w -> w
@@ -146,7 +163,7 @@ instance Subst Type where
   subst m (TUnit v nm)     = TUnit (subst m v) nm
   
 instance Subst Ann where
-  subst m v@(AVar n) = M.findWithDefault v n (snd m)
+  subst m v@(AVar n) = M.findWithDefault v n (cfaMap $ snd m)
   
 instance Subst (Set Constraint) where
   subst m cs = flip Set.map cs $ \(FlowConstraint nm v r) -> FlowConstraint nm (subst m v) r
@@ -186,37 +203,37 @@ occurs n t = n `elem` (ftv t)
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> CFA Env
 u t1@(TCon a) t2@(TCon b)
-  | a == b        = return mempty
+  | a == b        = return $ mempty
   | otherwise     = throwError (CannotUnify t1 t2)
 u (TArr (AVar p1) a1 b1) (TArr p2 a2 b2)
-                  = do let s0 = (M.empty, M.singleton p1 p2)
+                  = do let s0 = singleton (p1, p2)
                        s1 <- subst s0 a1 `u` subst s0 a2
                        s2 <- subst (s1 <> s0) b1 `u` subst (s1 <> s0) b2
                        return (s2 <> s1 <> s0)
 u t1@(TProd (AVar p1) n1 x1 y1) t2@(TProd p2 n2 x2 y2)
                   = if n1 == n2
-                    then do let s0 = (M.empty, M.singleton p1 p2)
+                    then do let s0 = singleton (p1, p2)
                             s1 <- subst s0 x1 `u` subst s0 x2;
                             s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
                             return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
 u t1@(TSum (AVar p1) n1 x1 y1) t2@(TSum p2 n2 x2 y2)
                   = if n1 == n2
-                    then do let s0 = (M.empty, M.singleton p1 p2)
+                    then do let s0 = singleton (p1, p2)
                             s1 <- subst s0 x1 `u` subst s0 x2;
                             s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
                             return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
 u t1@(TUnit (AVar p1) n1) t2@(TUnit p2 n2)
                   = if n1 == n2
-                    then do return $ (M.empty, M.singleton p1 p2)
+                    then do return $ singleton (p1, p2)
                     else do throwError (CannotUnify t1 t2)              
 u t1 t2@(TVar n)
   | n `occurs` t1 && t1 /= t2 = throwError (OccursCheck n t1)
-  | otherwise     = return (M.singleton n t1, M.empty)
+  | otherwise     = return $ singleton (n, t1)
 u t1@(TVar n) t2
   | n `occurs` t2 && t1 /= t2 = throwError (OccursCheck n t2)
-  | otherwise     = return (M.singleton n t2, M.empty)
+  | otherwise     = return $ singleton (n, t2)
 u t1 t2           = throwError (CannotUnify t1 t2)
 
 typeOf :: Lit -> Type
@@ -236,9 +253,15 @@ instance Fresh Ann where
 x ~> t = \(m, w) -> (M.insert x t m, w)
 
 (<>) :: Env -> Env -> Env
-(<>) m@(s2, a2) (s1, a1) = ( s2 `M.union` (subst m <$> s1)
-                           , a2 `M.union` (subst m <$> a1)
-                           )
+(<>) m@(s2, ExtendedEnv a2) (s1, ExtendedEnv a1) = ( s2 `M.union` (subst m <$> s1)
+                                                 , ExtendedEnv $ a2 `M.union` (subst m <$> a1)
+                                                 )
+
+mempty :: Env
+mempty = (M.empty, ExtendedEnv $ M.empty)
+
+mconcat :: [Env] -> Env
+mconcat = foldr (<>) mempty
 
 data Constraint = FlowConstraint String Ann Label
   deriving (Eq, Ord, Show)
