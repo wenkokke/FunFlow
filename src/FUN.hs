@@ -31,9 +31,9 @@ parseExpr = runParser "stdin" pExpr
 
 -- * Example code
 
-printProgram :: [Decl] -> M.Map TVar Type -> String
+printProgram :: [Decl] -> Env -> String
 printProgram p env = 
-  let funcType (Decl nm e) = case M.lookup nm env of
+  let funcType (Decl nm e) = case M.lookup nm (fst env) of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
                                Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
       funcBody = showDecl annotations
@@ -45,14 +45,14 @@ printProgram p env =
   in prefix ++ foldr printer "" p ++ suffix
   
 annotations :: Bool
-annotations = True
+annotations = False
   
 main :: IO ()
 main = 
   let prog = example
         
       put :: (Env, S.Set Constraint) -> String
-      put (m, w) =  let programInfo = "program = " ++ (printProgram prog $ fst m)
+      put (m, w) =  let programInfo = "program = " ++ printProgram prog m
                         annInfo  = "control flow = " ++ (printFlow . solveConstraints $ w)
                         
                     in    programInfo ++ "\n\n"

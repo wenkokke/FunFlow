@@ -130,10 +130,7 @@ fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TUnit v _)     = [case v of (AVar r) -> r]
 
-type TyEnv = Map TVar Type
-type AnnEnv = Map AVar Ann
-
-type Env = (TyEnv, AnnEnv)
+type Env = (Map TVar Type, Map AVar Ann)
 
 class Subst w where
   subst :: Env -> w -> w
