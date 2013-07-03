@@ -33,9 +33,7 @@ parseExpr = runParser "stdin" pExpr
 
 printProgram :: [Decl] -> M.Map TVar Type -> String
 printProgram p env = 
-  let annotations = True
-      
-      funcType (Decl nm e) = case M.lookup nm env of
+  let funcType (Decl nm e) = case M.lookup nm env of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
                                Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
       funcBody = showDecl annotations
@@ -45,10 +43,13 @@ printProgram p env =
       printer x xs = "  " ++ funcType x ++ "\n  " ++ funcBody x ++ "\n\n" ++ xs 
       
   in prefix ++ foldr printer "" p ++ suffix
-
+  
+annotations :: Bool
+annotations = True
+  
 main :: IO ()
 main = 
-  let program = ex1
+  let program = example
         
       put :: (TyEnv, S.Set Constraint) -> String
       put (m, w) =  let programInfo = "program = " ++ printProgram program m
@@ -107,7 +108,7 @@ exSilly = fmap parseDecl $
 
   
 exLoop = fmap parseDecl $
-  if False then
+  if True then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
@@ -123,15 +124,19 @@ exPairimental = fmap parseDecl $
   ]
   
 exSum = fmap parseDecl $
-  [ "testL = Either.Left 5"
-  , "testR = Either.Right false"
-  , "testLR = if false then testL else testR"
-  , "testLL = if false then testL else testL"
-  , "testRR = if false then testR else testR"
+  [ "sumL = Either.Left 5"
+  , "sumR = Either.Right false"
+  , "sumLR = if false then sumL else sumR"
+  , "sumLL = if false then sumL else sumL"
+  , "sumRR = if false then sumR else sumR"
+  , "killSumLR p = case p of Either.Left x -> x"
+ ++ "                        Either.Right y -> y"
+  , "killSumL p = case p of Either.Left x -> false"
+ ++ "                       Either.Right y -> y"
+  , "killSumR p = case p of Either.Left x -> x"
+ ++ "                       Either.Right y -> false"
   ]
 
-  
-  
 exUnion = concat $
   [ exCategory
   , exPair
@@ -145,5 +150,5 @@ exUnion = concat $
   , exSum
   ]
   
-ex1 = runLabel $ exUnion
+example = runLabel $ exUnion
   

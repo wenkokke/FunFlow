@@ -400,3 +400,23 @@ cfa exp env = case exp of
                                            , s3 <> s2 <> s1
                                            , empty
                                            )
+  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- cfa e1 env
+                                             
+                                              a_x <- fresh
+                                              a_y <- fresh
+                                              
+                                              b_0 <- fresh
+                                              
+                                              s2 <- t1 `u` TSum b_0 nm a_x a_y
+                                             
+                                              (tx, s3, c3) <- cfa ex . (x ~> a_x) . fmap (subst $ s2 <> s1) $ env
+                                              (ty, s4, c4) <- cfa ey . (y ~> a_y) . fmap (subst $ s3 <> s2 <> s1) $ env
+                                             
+                                              s5 <- tx `u` ty
+                                             
+                                              return ( subst s5 tx
+                                                     , s5 <> s4 <> s3 <> s2 <> s1
+                                                     , empty
+                                                     )
+                                             
+                                             
