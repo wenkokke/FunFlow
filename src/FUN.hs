@@ -45,7 +45,7 @@ printProgram p env =
   in prefix ++ foldr printer "" p ++ suffix
   
 annotations :: Bool
-annotations = True
+annotations = False
   
 main :: IO ()
 main = 
@@ -140,10 +140,11 @@ exSum = fmap parseDecl $
   ]
 
 exNats = fmap parseDecl $
-  [ "add a b = case a of"
- ++ "               Nat.Left u -> case u of () -> b"
- ++ "               Nat.Right g -> Nat.Right (add g b)"
+  [ "add a = fix add b => case b of"
+ ++ "                       Nat.Left u -> case u of () -> a"
+ ++ "                       Nat.Right g -> Nat.Right (add g)"
   ]
+
   
 exUnion = concat $
   [ exCategory
@@ -157,7 +158,6 @@ exUnion = concat $
   , exPairimental
   , exSum
   ]
-  
   
 example = runLabel $ exUnion
   
