@@ -27,20 +27,20 @@ import qualified Data.Set as Set
 
 -- * Type definitions
 
-type TVar = Name
-type AVar = Name
+type TVar = Name -- Type Variable
+type FVar = Name -- Flow Variable
 
-data Ann 
-  = AVar AVar
-  deriving (Eq, Ord, Show)
-
+data FAnn 
+  = FVar FVar 
+    deriving (Eq, Ord, Show)
+      
 data Type
-  = TCon  TVar
-  | TVar  TVar
-  | TArr  Ann Type Type
-  | TProd Ann Name Type Type
-  | TSum  Ann Name Type Type
-  | TUnit Ann Name
+  = TVar  TVar
+  | TCon  TVar
+  | TArr  FAnn Type Type
+  | TProd FAnn Name Type Type
+  | TSum  FAnn Name Type Type
+  | TUnit FAnn Name
   deriving (Eq)
     
 instance Show Type where
@@ -48,7 +48,7 @@ instance Show Type where
 
 showType :: Bool -> Type -> String
 showType cp = 
-  let printAnn (AVar s) = if cp then "{" ++ s ++ "}" else ""
+  let printAnn (FVar s) = if cp then "{" ++ s ++ "}" else ""
       showType ty = case ty of 
         TCon  n     -> n
         TVar  n     -> n
@@ -122,13 +122,13 @@ ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TUnit _ _)     = [ ]
 
 -- |Returns the set of free annotation variables in a type.
-fav :: Type -> [AVar]
+fav :: Type -> [FVar]
 fav (TCon      _) = [ ]
 fav (TVar      _) = [ ]
-fav (TArr  v   a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
-fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
-fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
-fav (TUnit v _)     = [case v of (AVar r) -> r]
+fav (TArr  v   a b) = fav a `L.union` fav b `L.union` [case v of (FVar r) -> r]
+fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (FVar r) -> r]
+fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (FVar r) -> r]
+fav (TUnit v _)     = [case v of (FVar r) -> r]
 
 class Singleton w k where
   singleton :: k -> w
@@ -139,14 +139,14 @@ instance Singleton (Map k a) (k, a) where
 instance Singleton (Set k) k where
   singleton = S.singleton
   
-instance Singleton Env (AVar, Ann) where
+instance Singleton Env (FVar, FAnn) where
   singleton (k, a) = (M.empty, ExtendedEnv $ M.singleton k a)
 
 instance Singleton Env (TVar, Type) where
   singleton (k, a) = (M.singleton k a, ExtendedEnv $ M.empty)
 
 
-data ExtendedEnv = ExtendedEnv { cfaMap :: Map AVar Ann }   
+data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar FAnn }   
 type Env = (Map TVar Type, ExtendedEnv)
 
 class Subst w where
@@ -162,8 +162,8 @@ instance Subst Type where
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
   subst m (TUnit v nm)     = TUnit (subst m v) nm
   
-instance Subst Ann where
-  subst m v@(AVar n) = M.findWithDefault v n (cfaMap $ snd m)
+instance Subst FAnn where
+  subst m v@(FVar n) = M.findWithDefault v n (cfaMap $ snd m)
   
 instance Subst (Set Constraint) where
   subst m cs = flip Set.map cs $ \(FlowConstraint nm v r) -> FlowConstraint nm (subst m v) r
@@ -194,7 +194,7 @@ instance Show TypeError where
   show (OtherError     msg) = msg
   show (NoMsg             ) = "nope"
 
-type CFA a = ErrorT TypeError (SupplyT AVar (Supply TVar)) a
+type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: TVar -> Type -> Bool
@@ -205,26 +205,26 @@ u :: Type -> Type -> CFA Env
 u t1@(TCon a) t2@(TCon b)
   | a == b        = return $ mempty
   | otherwise     = throwError (CannotUnify t1 t2)
-u (TArr (AVar p1) a1 b1) (TArr p2 a2 b2)
+u (TArr (FVar p1) a1 b1) (TArr p2 a2 b2)
                   = do let s0 = singleton (p1, p2)
                        s1 <- subst s0 a1 `u` subst s0 a2
                        s2 <- subst (s1 <> s0) b1 `u` subst (s1 <> s0) b2
                        return (s2 <> s1 <> s0)
-u t1@(TProd (AVar p1) n1 x1 y1) t2@(TProd p2 n2 x2 y2)
+u t1@(TProd (FVar p1) n1 x1 y1) t2@(TProd p2 n2 x2 y2)
                   = if n1 == n2
                     then do let s0 = singleton (p1, p2)
                             s1 <- subst s0 x1 `u` subst s0 x2;
                             s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
                             return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TSum (AVar p1) n1 x1 y1) t2@(TSum p2 n2 x2 y2)
+u t1@(TSum (FVar p1) n1 x1 y1) t2@(TSum p2 n2 x2 y2)
                   = if n1 == n2
                     then do let s0 = singleton (p1, p2)
                             s1 <- subst s0 x1 `u` subst s0 x2;
                             s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
                             return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TUnit (AVar p1) n1) t2@(TUnit p2 n2)
+u t1@(TUnit (FVar p1) n1) t2@(TUnit p2 n2)
                   = if n1 == n2
                     then do return $ singleton (p1, p2)
                     else do throwError (CannotUnify t1 t2)              
@@ -238,7 +238,7 @@ u t1 t2           = throwError (CannotUnify t1 t2)
 
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TCon "Bool"
-typeOf (Integer _) = TCon "Integer"
+typeOf (Integer _ _ _) = TCon "Integer"
 
 class Fresh t where
   fresh :: CFA t
@@ -246,8 +246,8 @@ class Fresh t where
 instance Fresh Type where
   fresh = fmap TVar $ lift (lift supply)
   
-instance Fresh Ann where
-  fresh = fmap AVar $ lift supply
+instance Fresh FAnn where
+  fresh = fmap FVar $ lift supply
 
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(m, w) -> (M.insert x t m, w)
@@ -263,10 +263,10 @@ mempty = (M.empty, ExtendedEnv $ M.empty)
 mconcat :: [Env] -> Env
 mconcat = foldr (<>) mempty
 
-data Constraint = FlowConstraint String Ann Label
+data Constraint = FlowConstraint String FAnn Label
   deriving (Eq, Ord, Show)
   
-printFlow :: Map AVar (String, Set Label) -> String
+printFlow :: Map FVar (String, Set Label) -> String
 printFlow m = 
   let prefix = "{\n"
       printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
@@ -274,7 +274,7 @@ printFlow m =
       suffix = "}"
   in prefix ++ content ++ suffix
     
-solveConstraints :: Set Constraint -> Map AVar (String, Set Label)
+solveConstraints :: Set Constraint -> Map FVar (String, Set Label)
 solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
   mergeNames p q = let (np, cp) = span (/= '.') p
                        (nq, cq) = span (/= '.') q
@@ -285,7 +285,7 @@ solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `un
                          else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
                     
   extractConstraint (FlowConstraint nm v l) = case v of
-                                          AVar r -> M.singleton r (nm, S.singleton l)
+                                          FVar r -> M.singleton r (nm, S.singleton l)
 
   
 ($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
@@ -299,7 +299,7 @@ f $* a = \d ->
 
 infixr 1 <&>
 
-constraint :: String -> Ann -> Label -> Set Constraint
+constraint :: String -> FAnn -> Label -> Set Constraint
 constraint nm a l = singleton $ FlowConstraint nm a l
 
 class Bifunctor w where

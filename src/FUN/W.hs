@@ -159,7 +159,7 @@ u t1 t2           = throwError (CannotUnify t1 t2)
 
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TyCon "Bool"
-typeOf (Integer _) = TyCon "Integer"
+typeOf (Integer _ _ _) = TyCon "Integer"
 
 fresh :: W Type
 fresh = do x <- lift supply; return (TyVar x)

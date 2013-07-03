@@ -13,9 +13,42 @@ data Decl
   = Decl Name Expr
   deriving (Eq)
 
+type SVar = Name -- Scale Variable
+type BVar = Name -- Base Variable
+
+ 
+data Scale
+  = SUnit
+  | SVar SVar
+  | STimes Scale Scale
+  | SInverse Scale
+  | SFeet   | SMeter 
+  | SDollar | SEuro 
+  | SKelvin | SCelcius  
+    deriving (Eq, Ord)
+
+instance Show Scale where
+  show SUnit = "Unit"
+  show (SVar v) = show v
+  show (STimes a b) = "(" ++ show a ++ "*" ++ show b ++ ")"
+  show (SInverse s) = "1/(" ++ show s ++ ")"
+  show SFeet = "Feet"
+  show SMeter = "Meter"
+  show SDollar = "Dollar"
+  show SEuro = "Euro"
+  show SKelvin = "Kelvin"
+  show SCelcius = "Celcius"
+    
+data Base
+  = BNone
+  | BVar BVar
+  | BFreezing
+    deriving (Eq, Ord, Show)
+
+  
 data Lit
   = Bool Bool
-  | Integer Integer
+  | Integer Scale Base Integer
   deriving (Eq)
   
 data LR = L | R
@@ -129,8 +162,7 @@ showExpr :: Bool -> Expr -> String
 showExpr cp =
   let showAnn  ann = if cp then "[" ++ ann ++ "]" else ""
       showExpr exp = case exp of
-        Lit (Bool b)    -> case b of True -> "true"; False -> "false"
-        Lit (Integer n) -> show n
+        Lit l           -> show l
         Var n           -> n
         Abs l n e       -> printf "fun %s =%s> %s" n (showAnn l) (showExpr e)
         Fix l f n e     -> printf "fix %s %s =%s> %s" f n (showAnn l) (showExpr e)
@@ -138,13 +170,13 @@ showExpr cp =
         Bin n e1 e2     -> printf "(%s %s %s)" (showExpr e1) n (showExpr e2)
         Let n e1 e2     -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
         ITE b e1 e2     -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)
-        Con l nm  con   -> printf "%s%s%s" nm (showAnn l) (showCon cp nm con)
+        Con l nm  con   -> printf "%s%s" (showAnn l) (showCon cp nm con)
         Des nm exp des  -> printf "case %s of %s" (showExpr exp) (showDes cp nm des)
   in showExpr
 
 showCon :: Bool -> Name -> Con -> String
-showCon cp nm (Unit)     = "()"
-showCon cp nm (Prod x y) = printf "%s(%s,%s)" nm (showExpr cp x) (showExpr cp y)
+showCon cp nm (Unit)     = nm ++ "()"
+showCon cp nm (Prod x y) = printf "%s(%s, %s)" nm (showExpr cp x) (showExpr cp y)
 showCon cp nm (Sum L e)  = printf "%s.Left %s" nm (showExpr cp e)
 showCon cp nm (Sum R e)  = printf "%s.Right %s" nm (showExpr cp e)
 
@@ -162,5 +194,10 @@ instance Show Expr where show = showExpr False
 --instance Show Des  where show = showDes False
 
 instance Show Lit where
-  show (Bool b)    = show b
-  show (Integer i) = show i
+  show (Bool b) = case b of True -> "true"; False -> "false"
+  show (Integer s b n) = show n ++ showAnn 
+    where  showAnn = if s /= SUnit 
+                        then if b /= BNone
+                                then "(" ++ show s ++ "/" ++ show b ++ ")"
+                                else " " ++ show s
+                        else ""
