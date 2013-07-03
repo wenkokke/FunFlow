@@ -143,9 +143,6 @@ exNats = fmap parseDecl $
  ++ "                       Nat.Right g -> Nat.Right (add g)"
   ]
 
-exUnit = fmap parseDecl $
-  [ "unit p = case p of Nil () -> Rand ()"
-  ]
 exUnion = concat $
   [ exCategory
   , exPair
@@ -159,5 +156,4 @@ exUnion = concat $
   , exSum
   ]
   
-example = runLabel $ exUnit
-  
+example = runLabel $ exUnion  
