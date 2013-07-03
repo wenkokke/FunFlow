@@ -74,16 +74,16 @@ showType cp =
 
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
-runCFA :: [Decl] -> Either TypeError (TyEnv, Set Constraint)
+runCFA :: [Decl] -> Either TypeError (Env, Set Constraint)
 runCFA = refreshAll . withFreshVars . foldl addDecl (return (mempty, empty))
   where
-  addDecl :: CFA (TyEnv, Set Constraint) -> Decl-> CFA (TyEnv, Set Constraint)
+  addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r
                             (t, s1, c1) <- cfa e $ env
                             
                             let s2 = (M.empty, snd s1)
                                 
-                            return ( M.insert x t . fmap (subst s2) $ env
+                            return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
                                    , subst s1 c0 `union` c1
                                    )
 
@@ -100,10 +100,10 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
     numbers = fmap (('t' :) . show) [0..]
 
 -- |Refreshes all entries in a type environment.
-refreshAll :: Either TypeError (TyEnv, Set Constraint) -> Either TypeError (TyEnv, Set Constraint)
-refreshAll env = do (env, c) <- env;
+refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
+refreshAll env = do ((env, w), c) <- env;
                     env <- mapM (withFreshVars . refresh) env
-                    return (env, c) 
+                    return ((env, w), c) 
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> CFA Type
@@ -131,12 +131,12 @@ fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TUnit v _)     = [case v of (AVar r) -> r]
 
 type TyEnv = Map TVar Type
-type AnnEnv = Map TVar Ann
+type AnnEnv = Map AVar Ann
 
-type TySubst = (TyEnv, AnnEnv)
+type Env = (TyEnv, AnnEnv)
 
 class Subst w where
-  subst :: TySubst -> w -> w
+  subst :: Env -> w -> w
 
   
 -- |Substitutes a type for a type variable in a type.
@@ -152,7 +152,7 @@ instance Subst Ann where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
   
 instance Subst (Set Constraint) where
-  subst m cs = flip Set.map cs $ \(Constraint nm v r) -> Constraint nm (subst m v) r
+  subst m cs = flip Set.map cs $ \(FlowConstraint nm v r) -> FlowConstraint nm (subst m v) r
   
 
 
@@ -187,7 +187,7 @@ occurs :: TVar -> Type -> Bool
 occurs n t = n `elem` (ftv t)
 
 -- |Unification as per Robinson's unification algorithm.
-u :: Type -> Type -> CFA TySubst
+u :: Type -> Type -> CFA Env
 u t1@(TCon a) t2@(TCon b)
   | a == b        = return mempty
   | otherwise     = throwError (CannotUnify t1 t2)
@@ -235,15 +235,15 @@ instance Fresh Type where
 instance Fresh Ann where
   fresh = fmap AVar $ lift supply
 
-(~>) :: TVar -> Type -> TyEnv -> TyEnv
-(~>) = M.insert
+(~>) :: TVar -> Type -> Env -> Env
+x ~> t = \(m, w) -> (M.insert x t m, w)
 
-(<>) :: TySubst -> TySubst -> TySubst
+(<>) :: Env -> Env -> Env
 (<>) m@(s2, a2) (s1, a1) = ( s2 `M.union` (subst m <$> s1)
                            , a2 `M.union` (subst m <$> a1)
                            )
 
-data Constraint = Constraint String Ann Label
+data Constraint = FlowConstraint String Ann Label
   deriving (Eq, Ord, Show)
   
 printFlow :: Map AVar (String, Set Label) -> String
@@ -264,7 +264,7 @@ solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `un
                                  else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
                          else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
                     
-  extractConstraint (Constraint nm v l) = case v of
+  extractConstraint (FlowConstraint nm v l) = case v of
                                           AVar r -> M.singleton r (nm, S.singleton l)
 
   
@@ -280,17 +280,26 @@ f $* a = \d ->
 infixr 1 <&>
 
 constraint :: String -> Ann -> Label -> Set Constraint
-constraint nm a l = singleton $ Constraint nm a l
+constraint nm a l = singleton $ FlowConstraint nm a l
+
+class Bifunctor w where
+  bimap :: (a -> x) -> (b -> y) -> w a b -> w x y
+  
+instance Bifunctor (,) where
+  bimap f g (a, b) = (f a, g b)
+  
+lmap f = bimap f id
+rmap g = bimap id g
 
 -- |Algorithm W for type inference.
-cfa :: Expr -> TyEnv -> CFA (Type, TySubst, Set Constraint)
+cfa :: Expr -> Env -> CFA (Type, Env, Set Constraint)
 cfa exp env = case exp of
   Lit l           -> return ( typeOf l
                             , mempty
                             , empty
                             )
   
-  Var x           -> do v <- (env $* x) $ throwError (UnboundVariable x)
+  Var x           -> do v <- (fst env $* x) $ throwError (UnboundVariable x)
                            
                         return ( v
                                , mempty
@@ -326,7 +335,7 @@ cfa exp env = case exp of
 
                         
   App f e         -> do (t1, s1, c1) <- cfa f $ env
-                        (t2, s2, c2) <- cfa e . fmap (subst s1) $ env
+                        (t2, s2, c2) <- cfa e $ s1 <> env
                         
                         a <- fresh;
                         b <- fresh
@@ -340,7 +349,7 @@ cfa exp env = case exp of
                                )
   
   Let x e1 e2     -> do (t1, s1, c1) <- cfa e1 $ env;
-                        (t2, s2, c2) <- cfa e2 . (x ~> t1) . fmap (subst s1) $ env
+                        (t2, s2, c2) <- cfa e2 . (x ~> t1) $ s1 <> env
 
                         return ( t2
                                , s2 <> s1
@@ -351,8 +360,8 @@ cfa exp env = case exp of
   -- * adding if-then-else constructs
                     
   ITE b e1 e2     -> do (t0, s0, c0) <- cfa b  $ env;
-                        (t1, s1, c1) <- cfa e1 . fmap (subst s0) $ env
-                        (t2, s2, c2) <- cfa e2 . fmap (subst (s1 <> s0)) $ env
+                        (t1, s1, c1) <- cfa e1 $ s0 <> env
+                        (t2, s2, c2) <- cfa e2 $ s1 <> s0 <> env
                         
                         s3 <- subst (s2 <> s1) t0 `u` TCon "Bool"
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
@@ -372,7 +381,7 @@ cfa exp env = case exp of
                                       )
   -- * adding product types
   Con pi nm (Prod x y)   -> do (t1, s1, c1) <- cfa x $ env
-                               (t2, s2, c2) <- cfa y . fmap (subst s1) $ env
+                               (t2, s2, c2) <- cfa y $ s1 <> env
       
                                b_0 <- fresh
       
@@ -406,7 +415,7 @@ cfa exp env = case exp of
                                              
                                   s2 <- t1 `u` TUnit b_0 nm
                                   
-                                  (t3, s3, c3) <- cfa e2 . fmap (subst $ s2 <> s1) $ env
+                                  (t3, s3, c3) <- cfa e2 $ s2 <> s1 <> env
                                   
                                   return ( t3
                                          , s3 <> s2 <> s1
@@ -421,7 +430,7 @@ cfa exp env = case exp of
                                     b_0 <- fresh
                                     
                                     s2 <- t1 `u` TProd b_0 nm a_x a_y
-                                    (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) . fmap (subst $ s2 <> s1) $ env
+                                    (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) $ s2 <> s1 <> env
 
                                     return ( t3
                                            , s3 <> s2 <> s1
@@ -437,8 +446,8 @@ cfa exp env = case exp of
                                               
                                               s2 <- t1 `u` TSum b_0 nm a_x a_y
                                              
-                                              (tx, s3, c3) <- cfa ex . (x ~> a_x) . fmap (subst $ s2 <> s1) $ env
-                                              (ty, s4, c4) <- cfa ey . (y ~> a_y) . fmap (subst $ s3 <> s2 <> s1) $ env
+                                              (tx, s3, c3) <- cfa ex . (x ~> a_x) $ s2 <> s1 <> env
+                                              (ty, s4, c4) <- cfa ey . (y ~> a_y) $ s3 <> s2 <> s1 <> env
                                              
                                               s5 <- tx `u` ty
                                              

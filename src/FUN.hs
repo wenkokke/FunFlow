@@ -9,7 +9,7 @@ import FUN.Parsing                      -- ^ parser
 import FUN.Labeling                     -- ^ labeling
 import FUN.W (runW)                     -- ^ type inference
 import FUN.CFA 
-  ( runCFA, TypeError, TyEnv, Constraint, showType
+  ( runCFA, TypeError, Env, Constraint, showType
   , printFlow, solveConstraints, TVar (..), Type (..)
   ) -- ^ control flow analysis
 
@@ -49,17 +49,17 @@ annotations = True
   
 main :: IO ()
 main = 
-  let program = example
+  let prog = example
         
-      put :: (TyEnv, S.Set Constraint) -> String
-      put (m, w) =  let programInfo = "program = " ++ printProgram program m
+      put :: (Env, S.Set Constraint) -> String
+      put (m, w) =  let programInfo = "program = " ++ (printProgram prog $ fst m)
                         annInfo  = "control flow = " ++ (printFlow . solveConstraints $ w)
                         
                     in    programInfo ++ "\n\n"
                        ++ annInfo     ++ "\n\n"
                        
-      env :: Either TypeError (TyEnv, S.Set Constraint)
-      env = runCFA program
+      env :: Either TypeError (Env, S.Set Constraint)
+      env = runCFA prog
   in either print (putStrLn . put) env
         
 exCategory = fmap parseDecl $
