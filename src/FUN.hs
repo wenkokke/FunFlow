@@ -10,7 +10,7 @@ import FUN.Labeling                     -- ^ labeling
 import FUN.W (runW)                     -- ^ type inference
 import FUN.CFA 
   ( runCFA, TypeError, TyEnv, Constraint, showType
-  , printFlow, organiseFlow, TVar (..), Type (..)
+  , printFlow, solveConstraints, TVar (..), Type (..)
   ) -- ^ control flow analysis
 
 import Text.Printf (printf)
@@ -53,7 +53,7 @@ main =
         
       put :: (TyEnv, S.Set Constraint) -> String
       put (m, w) =  let programInfo = "program = " ++ printProgram program m
-                        annInfo  = "control flow = " ++ (printFlow . organiseFlow $ w)
+                        annInfo  = "control flow = " ++ (printFlow . solveConstraints $ w)
                         
                     in    programInfo ++ "\n\n"
                        ++ annInfo     ++ "\n\n"

@@ -254,8 +254,8 @@ printFlow m =
       suffix = "}"
   in prefix ++ content ++ suffix
     
-organiseFlow :: Set Constraint -> Map AVar (String, Set Label)
-organiseFlow = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
+solveConstraints :: Set Constraint -> Map AVar (String, Set Label)
+solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
   mergeNames p q = let (np, cp) = span (/= '.') p
                        (nq, cq) = span (/= '.') q
                    in if np == nq
