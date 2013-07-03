@@ -45,7 +45,7 @@ printProgram p env =
   in prefix ++ foldr printer "" p ++ suffix
   
 annotations :: Bool
-annotations = False
+annotations = True
   
 main :: IO ()
 main = 
@@ -135,8 +135,6 @@ exSum = fmap parseDecl $
  ++ "                       Either.Right y -> y"
   , "killSumR p = case p of Either.Left x -> x"
  ++ "                       Either.Right y -> false"
-  , "tester u = case u of Nat.Left a -> case a of () -> false"
- ++ "                     Nat.Right a -> a"
   ]
 
 exNats = fmap parseDecl $
@@ -145,7 +143,9 @@ exNats = fmap parseDecl $
  ++ "                       Nat.Right g -> Nat.Right (add g)"
   ]
 
-  
+exUnit = fmap parseDecl $
+  [ "unit p = case p of Nil () -> Rand ()"
+  ]
 exUnion = concat $
   [ exCategory
   , exPair
@@ -159,5 +159,5 @@ exUnion = concat $
   , exSum
   ]
   
-example = runLabel $ exUnion
+example = runLabel $ exUnit
   

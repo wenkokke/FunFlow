@@ -70,12 +70,16 @@ des :: Expr -> Name -> (Name -> Des) -> Expr
 des e nm f = Des nm e (f nm)
 
 -- |Constructs a unit destructor.
-ununit :: Expr -> Expr -> Expr
-ununit e1 e2 = Des "()" e1 (UnUnit e2) 
+ununit :: Expr -> (Name -> Des)
+ununit e nm = UnUnit e 
 
 -- |Constructs a product destructor.
 unprod :: Name -> Name -> Expr -> (Name -> Des)
 unprod x y e _ = UnProd x y e
+
+-- |Constructs a sum destructor.
+unsum :: Name -> Expr -> Name -> Name -> Expr -> (Name -> Des)
+unsum xl el nr xr er nl | nl == nr = UnSum (xl, el) (xr, er)
 
 -- |Construcs a left sum constructor.
 suml :: Expr -> Con
@@ -96,10 +100,6 @@ nil = Con noLabel "List" (Sum L (Con noLabel "Nil" Unit))
 -- |Constructs a "cons".
 cons :: Expr -> Expr -> Expr
 cons x xs = Con noLabel "List" (Sum R (Con noLabel "Cons" (Prod x xs)))
-
--- |Constructs a sum destructor.
-unsum :: Name -> Expr -> Name -> Name -> Expr -> (Name -> Des)
-unsum xl el nr xr er nl | nl == nr = UnSum (xl, el) (xr, er)
 
 -- |Constructs an N-ary lambda abstraction
 abs :: [Name] -> Expr -> Expr
@@ -138,18 +138,18 @@ showExpr cp =
         Bin n e1 e2     -> printf "(%s %s %s)" (showExpr e1) n (showExpr e2)
         Let n e1 e2     -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
         ITE b e1 e2     -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)
-        Con l nm  con   -> printf "%s[%s]" (showAnn l) (showCon cp nm con)
+        Con l nm  con   -> printf "%s%s%s" nm (showAnn l) (showCon cp nm con)
         Des nm exp des  -> printf "case %s of %s" (showExpr exp) (showDes cp nm des)
   in showExpr
 
 showCon :: Bool -> Name -> Con -> String
-showCon cp nm (Unit)     = nm
+showCon cp nm (Unit)     = "()"
 showCon cp nm (Prod x y) = printf "%s(%s,%s)" nm (showExpr cp x) (showExpr cp y)
 showCon cp nm (Sum L e)  = printf "%s.Left %s" nm (showExpr cp e)
 showCon cp nm (Sum R e)  = printf "%s.Right %s" nm (showExpr cp e)
 
 showDes :: Bool -> Name -> Des -> String
-showDes cp nm (UnUnit e)           = printf "%s -> %s" nm (showExpr cp e)
+showDes cp nm (UnUnit e)           = printf "%s () -> %s" nm (showExpr cp e)
 showDes cp nm (UnProd x y e)       = printf "%s(%s,%s) -> %s" nm x y (showExpr cp e)
 showDes cp nm (UnSum  (xl, el) (xr, er)) = printf "%s.Left %s -> %s ; %s.Right %s -> %s"
                                              nm xl (showExpr cp el) nm xr (showExpr cp er)

@@ -23,7 +23,7 @@ pDecls :: Parser [Decl]
 pDecls = pList1Sep (pSymbol ";") pDecl
 
 pExpr :: Parser Expr
-pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pUnit <|> pUnUnit <|> pList) <<|> pBin
+pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pList) <<|> pBin
   where
   
   -- literal expressions
@@ -43,25 +43,21 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pUnit <|> pUnUnit
   pLet    = iI letn "let" pDecls "in" pExpr Ii
   pITE    = iI ITE "if" pExpr "then" pExpr "else" pExpr Ii
   
-  pCon    = iI con pConst (pProd <|> pSum) Ii
-  pDes    = iI des "case" pExpr "of" pConst (pUnProd <|> pUnSum) Ii
+  pCon    = iI con pConst (pUnit <|> pProd <|> pSum) Ii
+  pDes    = iI des "case" pExpr "of" pConst (pUnUnit <|> pUnProd <|> pUnSum) Ii
  
-  pUnit   = const unit <$> pSymbol "()"
-  pUnUnit = iI ununit "case" pExpr "of" "()" "->" pExpr Ii
-  
-  pProd,pSum :: Parser Con
-  pProd   = iI Prod "(" pExpr "," pExpr ")"Ii
+  pUnit, pProd, pSum :: Parser Con
+  pUnit   = const Unit <$> pSymbol "()"
+  pProd   = iI Prod "(" pExpr "," pExpr ")" Ii
   pSum    = pSumL <|> pSumR
     where
-    pSumL,pSumR :: Parser Con
+    pSumL, pSumR :: Parser Con
     pSumL = iI suml ".Left"  pExpr Ii
-    pSumR = iI sumr ".Right" pExpr Ii
+    pSumR = iI sumr ".Right" pExpr Ii  
   
-  --pUnUnit :: 
-  --pUnUnit = undefined -- iI ununit "->" pExpr Ii
+  pUnUnit, pUnProd, pUnSum :: Parser (Name -> Des)
   
-  
-  pUnProd,pUnSum :: Parser (Name -> Des)
+  pUnUnit = iI ununit "()" "->" pExpr Ii
   pUnProd = iI unprod "(" pIdent "," pIdent ")" "->" pExpr Ii
   pUnSum  = iI unsum         "." "Left"  pIdent "->" pExpr
                       pConst "." "Right" pIdent "->" pExpr Ii

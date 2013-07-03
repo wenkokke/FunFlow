@@ -38,9 +38,9 @@ data Type
   = TCon  TVar
   | TVar  TVar
   | TArr  Ann Type Type
-  | TProd Ann TVar Type Type
-  | TSum  Ann TVar Type Type
-  | TUnit Ann
+  | TProd Ann Name Type Type
+  | TSum  Ann Name Type Type
+  | TUnit Ann Name
   deriving (Eq)
     
 instance Show Type where
@@ -56,7 +56,7 @@ showType cp =
             where
             wrap ty@(TArr _ _ _) = printf "(%s)" (showType ty)
             wrap ty              = showType ty
-        TProd v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b)
+        TProd v nm a b -> printf "%s%s(%s, %s)" nm (printAnn v) (wrap a) (wrap b)
             where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
@@ -68,7 +68,7 @@ showType cp =
             wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
             wrap ty                 = showType ty
-        TUnit v -> printf "()%s" (printAnn v)
+        TUnit v nm -> printf "%s%s()" nm (printAnn v)
   in showType
 -- * Algorithm W for Type Inference
 
@@ -119,7 +119,7 @@ ftv (TVar  n)       = [n]
 ftv (TArr  _   a b) = L.union (ftv a) (ftv b)
 ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
-ftv (TUnit _)       = [ ]
+ftv (TUnit _ _)     = [ ]
 
 -- |Returns the set of free annotation variables in a type.
 fav :: Type -> [AVar]
@@ -128,7 +128,7 @@ fav (TVar      _) = [ ]
 fav (TArr  v   a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TProd v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
 fav (TSum  v _ a b) = fav a `L.union` fav b `L.union` [case v of (AVar r) -> r]
-fav (TUnit  v)      = [case v of (AVar r) -> r]
+fav (TUnit v _)     = [case v of (AVar r) -> r]
 
 type TyEnv = Map TVar Type
 type AnnEnv = Map TVar Ann
@@ -146,7 +146,7 @@ instance Subst Type where
   subst m (TArr  v    a b) = TArr (subst m v) (subst m a) (subst m b)
   subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
-  subst m (TUnit v)        = TUnit (subst m v)
+  subst m (TUnit v nm)     = TUnit (subst m v) nm
   
 instance Subst Ann where
   subst m v@(AVar n) = M.findWithDefault v n (snd m)
@@ -210,7 +210,10 @@ u t1@(TSum (AVar p1) n1 x1 y1) t2@(TSum p2 n2 x2 y2)
                             s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
                             return (s2 <> s1 <> s0)
                     else do throwError (CannotUnify t1 t2)
-u (TUnit (AVar p1)) (TUnit p2) = return $ (M.empty, M.singleton p1 p2)
+u t1@(TUnit (AVar p1) n1) t2@(TUnit p2 n2)
+                  = if n1 == n2
+                    then do return $ (M.empty, M.singleton p1 p2)
+                    else do throwError (CannotUnify t1 t2)              
 u t1 t2@(TVar n)
   | n `occurs` t1 && t1 /= t2 = throwError (OccursCheck n t1)
   | otherwise     = return (M.singleton n t1, M.empty)
@@ -363,9 +366,9 @@ cfa exp env = case exp of
                                
   Con pi nm Unit         -> do b_0 <- fresh
     
-                               return ( TUnit b_0
+                               return ( TUnit b_0 nm
                                       , mempty
-                                      , constraint "()" b_0 pi
+                                      , constraint nm b_0 pi
                                       )
   -- * adding product types
   Con pi nm (Prod x y)   -> do (t1, s1, c1) <- cfa x $ env
@@ -396,6 +399,19 @@ cfa exp env = case exp of
                                       , s1
                                       , c1 `union` constraint (nm ++ ".Right") b_0 pi
                                       )
+
+  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- cfa e1 env
+                                             
+                                  b_0 <- fresh
+                                             
+                                  s2 <- t1 `u` TUnit b_0 nm
+                                  
+                                  (t3, s3, c3) <- cfa e2 . fmap (subst $ s2 <> s1) $ env
+                                  
+                                  return ( t3
+                                         , s3 <> s2 <> s1
+                                         , c3 `union` c1
+                                         )
 
   Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 env
                                   
@@ -432,16 +448,3 @@ cfa exp env = case exp of
                                                        subst (s5 <> s4)             c3 `union` 
                                                        subst  s5                    c4 
                                                      )
-
-  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- cfa e1 env
-                                             
-                                  b_0 <- fresh
-                                             
-                                  s2 <- t1 `u` TUnit b_0
-                                  
-                                  (t3, s3, c3) <- cfa e2 . fmap (subst $ s2 <> s1) $ env
-                                  
-                                  return ( t3
-                                         , s3 <> s2 <> s1
-                                         , c3 `union` c1
-                                         )
