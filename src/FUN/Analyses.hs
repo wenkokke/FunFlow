@@ -450,7 +450,10 @@ extractBaseConstraints = unionMap findBases where
                     
 -- * Environments
 
-data Env = Env (Map TVar Type) ExtendedEnv
+data Env = Env
+  { getPrimary  :: (Map TVar Type)
+  , getExtended :: ExtendedEnv
+  }
 
 data ExtendedEnv = ExtendedEnv
   { flowMap  :: Map FVar Flow
@@ -463,14 +466,8 @@ emptyExtendedEnv = ExtendedEnv {
   scaleMap = M.empty,
   baseMap  = M.empty
 }
-
-getPrimary :: Env -> Map TVar Type
-getPrimary (Env a b) = a
-  
-getExtended :: Env -> ExtendedEnv
-getExtended (Env a b) = b
                                      
--- * Substitutions
+-- * Extend Substitutions to @Env@
 
 -- |Substitutes a type for a type variable in a type.
 instance Subst Env Type where
@@ -489,17 +486,6 @@ instance Subst Env Constraint where
   subst m (FlowConstraint r)      = FlowConstraint $ subst m r
   subst m (ScaleConstraint ss)    = ScaleConstraint $ subst m ss
   subst m (BaseConstraint ss)     = BaseConstraint $ subst m ss
-
-instance Subst Env FlowConstraint where
-  subst m (Flow nm v l) = Flow nm (subst m v) l
-  
-instance Subst Env ScaleConstraint where
-  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
-
-instance Subst Env BaseConstraint where
-  subst m (BaseEquality ss) = BaseEquality $ map (subst m) ss
-  subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
-  subst m (BaseSelection (x, y) z) = BaseSelection (subst m x, subst m y) (subst m z)
   
 instance Subst Env Flow where
   subst e = subst (flowMap $ getExtended e)

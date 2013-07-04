@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Measure where
@@ -115,3 +117,11 @@ instance Subst (Map SVar Scale) Scale where
 instance Subst (Map BVar Base) Base where
   subst m v@(BVar n) = M.findWithDefault v n m
   subst m v@_ = v
+  
+instance (Subst e Scale) => Subst e ScaleConstraint where
+  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
+  
+instance (Subst e Base) => Subst e BaseConstraint where
+  subst m (BaseEquality ss)           = BaseEquality $ map (subst m) ss
+  subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
+  subst m (BaseSelection (x, y) z)    = BaseSelection (subst m x, subst m y) (subst m z)

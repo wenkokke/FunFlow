@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Flow where
@@ -51,3 +53,6 @@ printFlowInformation m =
 
 instance Subst (Map FVar Flow) Flow where
   subst m v@(FVar n) = M.findWithDefault v n m
+
+instance (Subst e Flow) => Subst e FlowConstraint where
+  subst m (Flow nm v l) = Flow nm (subst m v) l
