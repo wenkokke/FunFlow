@@ -1,4 +1,4 @@
-module FUN.Analyses.Scales where
+module FUN.Analyses.Measure where
 
 import Data.Monoid
 import Data.Map (Map)
