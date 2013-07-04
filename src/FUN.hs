@@ -163,7 +163,11 @@ exMeasure = fmap parseDecl $
   , "v2 = s2 / t2"
   , "combinedSpeed = v1 + v2"
   , "averageSpeed = combinedSpeed / 2"
-     ]
+  
+  , "t3 = asSeconds 13"
+  , "s3 = combinedSpeed * t3"
+  
+  ]
   
 exUnion = concat $
   [ exCategory
