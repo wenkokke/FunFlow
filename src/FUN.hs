@@ -14,6 +14,9 @@ import FUN.CFA
   ) -- ^ control flow analysis
 
 import Text.Printf (printf)
+
+import Data.Set ( Set )
+
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Text.ParserCombinators.UU.Utils (runParser)
@@ -31,8 +34,8 @@ parseExpr = runParser "stdin" pExpr
 
 -- * Example code
 
-printProgram :: [Decl] -> Env -> String
-printProgram p env = 
+printProgram :: Prog -> Env -> String
+printProgram (Prog p) env = 
   let funcType (Decl nm e) = case M.lookup nm (fst env) of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
                                Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
@@ -45,21 +48,21 @@ printProgram p env =
   in prefix ++ foldr printer "" p ++ suffix
   
 annotations :: Bool
-annotations = False
+annotations = True
   
 main :: IO ()
 main = 
   let prog = example
         
-      put :: (Env, S.Set Constraint) -> String
-      put (m, w) =  let programInfo = "program = " ++ printProgram prog m
-                        annInfo  = "control flow = " ++ (printFlow . solveConstraints $ w)
+      put :: (Env, Prog, Set Constraint) -> String
+      put (m, p, w) = let programInfo = "program = " ++ printProgram p m
+                          annInfo  = "control flow = " ++ (printFlow . solveConstraints $ w)
                         
-                    in    programInfo ++ "\n\n"
-                       ++ annInfo     ++ "\n\n"
+                      in    programInfo ++ "\n\n"
+                         ++ annInfo     ++ "\n\n"
                        
-      env :: Either TypeError (Env, S.Set Constraint)
-      env = runCFA prelude prog
+      env :: Either TypeError (Env, Prog, Set Constraint)
+      env = runCFA prog
   in either print (putStrLn . put) env
         
 exCategory = fmap parseDecl $
@@ -156,4 +159,4 @@ exUnion = concat $
   , exSum
   ]
   
-example = runLabel $ exUnion  
+example = exUnion  

@@ -3,6 +3,9 @@
 module FUN.CFA where
 
 import FUN.Base
+import FUN.Parsing ( )
+import FUN.Labeling
+
 import Text.Printf (printf)
 
 import Prelude hiding (mapM)
@@ -15,7 +18,7 @@ import qualified Data.List as L (union)
 -- import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
 import Data.Traversable (forM,mapM)
 
-import Control.Monad (join)
+import Control.Monad (join, foldM)
 import Control.Applicative hiding (empty)
 
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
@@ -25,8 +28,23 @@ import Control.Monad.Trans (lift)
 import Data.Set ( Set, empty, union )
 import qualified Data.Set as Set
 
-prelude :: Env
-prelude = mempty
+
+prelude :: CFA (Env, [Decl])
+prelude = if True then return (mempty, []) else
+  let id = Abs noLabel "x" (Var "x")
+      
+      predefs =
+        [ ("asKelvin",  id, \v -> TArr v (TInt SUnit BNone) (TInt SKelvin BNone)     )
+        , ("asCelcius", id, \v -> TArr v (TInt SUnit BNone) (TInt SKelvin BFreezing) )
+        , ("asFeet",    id, \v -> TArr v (TInt SUnit BNone) (TInt SFeet BNone)       )        
+        , ("asMeter",   id, \v -> TArr v (TInt SUnit BNone) (TInt SMeter BNone)      )        
+        , ("asDollar",  id, \v -> TArr v (TInt SUnit BNone) (TInt SDollar BNone)     )        
+        , ("asEuro",    id, \v -> TArr v (TInt SUnit BNone) (TInt SEuro BNone)       )
+        ]
+  in do ps <- mapM (\(nm, e, f) -> do v <- fresh; return ( (nm, f v), Decl nm e)) $ predefs
+        let (env, ds) = unzip ps
+        
+        return ( (M.fromList env, emptyExtendedEnv), ds ) 
 
 -- * Type definitions
 
@@ -104,10 +122,10 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
     numbers = fmap (('t' :) . show) [0..]
 
 -- |Refreshes all entries in a type environment.
-refreshAll :: Either TypeError (Env, Set Constraint) -> Either TypeError (Env, Set Constraint)
-refreshAll env = do (env, c) <- env;
+refreshAll :: Either TypeError (Env, Prog, Set Constraint) -> Either TypeError (Env, Prog, Set Constraint)
+refreshAll env = do (env, p, c) <- env;
                     m <- mapM (withFreshVars . refresh) $ fst env
-                    return ((m, snd env), c) 
+                    return ((m, snd env), p, c) 
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> CFA Type
@@ -520,14 +538,17 @@ solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `un
   extractConstraint (FlowConstraint nm v l) = case v of
                                           FVar r -> M.singleton r (nm, S.singleton l)
 
-  
-                               
+
+     
+     
+                  
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
---  declaration an available expression in the next.
-runCFA :: Env -> [Decl] -> Either TypeError (Env, Set Constraint)
-runCFA env = refreshAll . withFreshVars . foldl addDecl ( return (env, empty) ) where
+--  declaration an available expression in the next.                                           
+{-
+runCFAx :: [Decl] -> Either TypeError (Env, Set Constraint)
+runCFAx = refreshAll . withFreshVars . foldl addDecl ( do env <- prelude; return (fst env, empty) ) . runLabel where
   addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
   addDecl r (Decl x e) = do (env, c0) <- r
                             (t, s1, c1) <- cfa e $ env
@@ -537,4 +558,25 @@ runCFA env = refreshAll . withFreshVars . foldl addDecl ( return (env, empty) ) 
                             return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
                                    , subst s1 c0 `union` c1
                                    )
+                                   -}
 
+
+runCFA :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
+runCFA ds = 
+  let addDecl :: (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
+      addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- cfa e $ env
+                                  
+                                        let s2 = (M.empty, snd s1)
+                                    
+                                        return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
+                                               , subst s1 c0 `union` c1
+                                               )                                          
+
+      
+  in refreshAll . withFreshVars $ do (env, preds) <- prelude
+  
+                                     let decList = runLabel $ preds ++ ds
+                                         
+                                     (env, c0) <- foldM addDecl (env, empty) $ decList 
+                                     return (env, Prog decList, c0)
+                                     
