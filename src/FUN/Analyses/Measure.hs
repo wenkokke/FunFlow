@@ -76,25 +76,44 @@ instance Show BaseConstraint where
 
 -- * Constraint Solving
 
-solveScales :: Set ScaleConstraint -> SSubst
-solveScales = F.foldMap solveOne where
+isValidScaleConstraint :: ScaleConstraint -> Bool
+isValidScaleConstraint (ScaleEquality cs) = S.size cs > 1
+
+sUnify :: Scale -> Scale -> SSubst
+sUnify (SVar x) s = singleton (x,s)
+sUnify s (SVar x) = singleton (x,s)
+
+-- complete unification algorithm without thinking about commutativity
+-- of the (*) operator, and then "fold" the equality constraints with the
+-- unification function.
+--
+-- then perform one round of imperfect unification across all equality
+-- constraints, and apply the result to *all* equality constraints.
+--
+-- then begin the algorithm anew, and continue for n rounds (because we
+-- can't be sure a fixpoint will ever be found).
+
+solveScaleConstraints :: Set ScaleConstraint -> SSubst
+solveScaleConstraints = F.foldMap solveOne where
   solveOne (ScaleEquality cs) = solveCons cs
   
   solveCons :: Set Scale -> SSubst
-  solveCons cs = foldr (\v m -> m <> singleton (v,single cons)) mempty vars
-    where
+  solveCons cs = withSingle (single cons) where
     list = S.toList cs   :: [Scale]
-    cons = getSCons list :: [SCon]
+    cons = getSCons list :: [Scale]
     vars = getSVars list :: [SVar]
-    single [     ] = SVar (head vars)
-    single [  x  ] = SCon x
-    single (x:y:_) = error (printf "cannot unify %s with %s" (show x) (show y))
+    single [     ] = Just $ SVar (head vars)
+    single [  x  ] = Just $ x
+    single (x:y:_) = Nothing
+    withSingle (Just  x) = foldr (\v m -> m <> singleton (v,x)) mempty vars
+    withSingle (Nothing) = mempty
     
-  getSCons :: [Scale] -> [SCon]
-  getSCons = map getSCon . filter isSCon where
-    isSCon  (SCon _) = True
-    isSCon        _  = False
-    getSCon (SCon v) = v
+  getSCons :: [Scale] -> [Scale]
+  getSCons = filter isSCon where
+    isSCon  (SCon _)   = True
+    isSCon  (SInv a)   = isSCon a
+    isSCon  (SMul a b) = isSCon a && isSCon b
+    isSCon        _    = False
   
   solveVars :: Set Scale -> SSubst
   solveVars = mkSSubst . getSVars . S.toList where

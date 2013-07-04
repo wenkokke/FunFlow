@@ -171,10 +171,23 @@ analyseAll ds =
 
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
                                      
-                                     let ss    = solveScales . extractScaleConstraints $ c0
-                                     let ssEnv = traceShow ss (subst ss env)
+                                     -- extract the scale constraints
+                                     let sc0  = extractScaleConstraints c0
                                      
-                                     return (ssEnv, Prog $ (labeledLib ++ labeledDecls), c0)
+                                     -- do a first run of constraint solving
+                                     let ss1  = solveScaleConstraints sc0
+                                     let env1 = subst ss1 env
+                                     let sc1  = S.filter isValidScaleConstraint . subst ss1 $ sc0
+                                     
+                                     -- do a second run of constraint solving
+                                     let ss2  = solveScaleConstraints sc1
+                                     let env2 = subst ss2 env
+                                     let sc2  = S.filter isValidScaleConstraint . subst ss2 $ sc1
+                                     
+                                     -- update the final constraint set
+                                     let c2   = subst ss2 c0
+                                     
+                                     return (env2, Prog $ (labeledLib ++ labeledDecls), c2)
 
 -- |Runs the Algorithm W inference for types, control flow and measures.
 analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
@@ -504,6 +517,9 @@ instance Subst Env Base where
 instance Subst SSubst Env where
   subst s (Env p e) = Env (subst (injectSSubst s mempty) p) e
   
+instance Subst SSubst Constraint where
+  subst s = subst (injectSSubst s mempty)
+
 injectSSubst :: SSubst -> Env -> Env
 injectSSubst (SSubst m) e = Env (getPrimary e) ((getExtended e) { scaleMap = m })
 

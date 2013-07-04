@@ -16,8 +16,7 @@ import FUN.Analyses
 import FUN.Analyses.Flow
   ( printFlowInformation, solveFlowConstraints )
 import FUN.Analyses.Measure
-  ( printScaleInformation, solveScaleConstraints
-  , printBaseInformation,  solveBaseConstraints )
+  ( printScaleInformation, printBaseInformation )
 
 import Text.Printf (printf)
 
@@ -160,9 +159,11 @@ exMeasure = fmap parseDecl $
 
   , "s2 = asMeters 7"
   , "t2 = asSeconds 11"
+  , "t3 = t2"
   , "v2 = s2 / t2"
+  
   , "combinedSpeed = v1 + v2"
-  , "averageSpeed = combinedSpeed / 2"
+  , "averageSpeed  = combinedSpeed / 2"
   
   , "t3 = asSeconds 13"
   , "s3 = combinedSpeed * t3"
