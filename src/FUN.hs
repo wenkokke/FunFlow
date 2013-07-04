@@ -71,9 +71,9 @@ main =
                             ++ (printBaseInformation . extractBaseConstraints $ w)
                         
                       in    programInfo ++ "\n\n"
-                         ++ flowInfo     ++ "\n\n"
-                         ++ scaleInfo     ++ "\n\n"
-                         ++ baseInfo     ++ "\n\n"
+                         ++ flowInfo    ++ "\n\n"
+                         ++ scaleInfo   ++ "\n\n"
+                         ++ baseInfo    ++ "\n\n"
       env :: Either TypeError (Env, Prog, Set Constraint)
       env = analyseAll prog
   in either print (putStrLn . put) env
@@ -166,7 +166,6 @@ exMeasure = fmap parseDecl $
   
   , "t3 = asSeconds 13"
   , "s3 = combinedSpeed * t3"
-  
   ]
   
 exUnion = concat $

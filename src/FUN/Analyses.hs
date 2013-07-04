@@ -423,11 +423,11 @@ data Constraint
   | BaseConstraint  BaseConstraint
     deriving (Eq, Ord, Show)
 
-scaleEquality :: Set Scale -> Set Constraint
-scaleEquality = S.singleton . ScaleConstraint . ScaleEquality
+scaleEquality :: [Scale] -> Set Constraint
+scaleEquality = S.singleton . ScaleConstraint . ScaleEquality . S.fromList
 
-baseEquality :: Set Base -> Set Constraint
-baseEquality = S.singleton . BaseConstraint . BaseEquality
+baseEquality :: [Base] -> Set Constraint
+baseEquality = S.singleton . BaseConstraint . BaseEquality . S.fromList
 
 selectBase :: (Base, Base) -> Base -> Set Constraint
 selectBase xy z = S.singleton $ BaseConstraint $ BaseSelection xy z
