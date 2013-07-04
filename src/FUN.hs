@@ -156,4 +156,9 @@ exUnion = concat $
   , exSum
   ]
   
+exOper = fmap parseDecl $
+  [ "plus x y = x + y"
+  , "plus1 x = x + 1"
+  ]
+
 example = runLabel $ exUnion  
