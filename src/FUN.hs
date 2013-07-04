@@ -5,9 +5,9 @@ module FUN
   , main
   ) where
 
-import FUN.Base                         -- ^ abstract syntax tree
-import FUN.Parsing                      -- ^ parser
-import FUN.Labeling                     -- ^ labeling
+import FUN.Base     -- ^ abstract syntax tree
+import FUN.Parsing  -- ^ parser
+import FUN.Labeling -- ^ labeling
 import FUN.Analyses 
   ( analyse, prelude, TypeError, Env, Constraint, showType
   , extractFlowConstraints, extractScaleConstraints, extractBaseConstraints
@@ -15,16 +15,17 @@ import FUN.Analyses
   )
 import FUN.Analyses.Flow
   ( printFlowInformation, solveFlowConstraints )
-import FUN.Analyses.Scales
+import FUN.Analyses.Measure
   ( printScaleInformation, solveScaleConstraints
   , printBaseInformation,  solveBaseConstraints )
 
 import Text.Printf (printf)
 
-import Data.Set ( Set )
-
+import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Set (Set)
 import qualified Data.Set as S
+
 import Text.ParserCombinators.UU.Utils (runParser)
 
 -- * Top-Level Parsers

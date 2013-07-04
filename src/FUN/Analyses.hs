@@ -1,36 +1,29 @@
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
-
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses where
 
 import FUN.Base
 import FUN.Labeling
 import FUN.Analyses.Flow
-import FUN.Analyses.Scales
-
-import Text.Printf (printf)
+import FUN.Analyses.Measure
+import FUN.Analyses.Utils
 
 import Prelude hiding (mapM)
 
-import Debug.Trace
-
-import Data.Map (Map)
-import qualified Data.Map as M
-import qualified Data.Set as S
-import qualified Data.List as L (union)
-
-import Data.Traversable (forM,mapM)
-
+import Control.Applicative ((<$>))
 import Control.Monad (join, foldM)
-
-import Control.Applicative hiding (empty)
-import qualified Control.Applicative as A
-
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply, SupplyT, supply, evalSupply, evalSupplyT)
 import Control.Monad.Trans (lift)
 
+import Data.Map (Map)
+import qualified Data.Map as M
 import Data.Set ( Set, empty, union )
-import qualified Data.Set as Set
+import qualified Data.Set as S
+import qualified Data.List as L (union)
+import Data.Traversable (forM,mapM)
+
+import Text.Printf (printf)
 
 prelude :: Analysis (Env, [Decl])
 prelude = if False then return (mempty, []) else
@@ -177,13 +170,6 @@ type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 typeOf :: Lit -> Type
 typeOf (Bool    _) = TBool
 typeOf (Integer s b _) = TInt s b
-
-($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
-f $* a = \d ->
-  case M.lookup a f of
-    Just b  -> pure b
-    Nothing -> d
-
 
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(m, w) -> (M.insert x t m, w)
@@ -400,13 +386,6 @@ cfa exp env = case exp of
                              subst (s4 <> s3 <> s2)       c1 `union`
                              subst  s4                    c3
                            )
-
-maybeHead :: [a] -> Maybe a
-maybeHead [   ] = Nothing
-maybeHead (x:_) = Just x
-
-unionMap :: (Ord a, Ord b) => (a -> Set b) -> Set a -> Set b
-unionMap f = S.unions . map f . S.toList
 
 -- * Algorithm W for Type Inference
 
