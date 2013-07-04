@@ -144,7 +144,7 @@ exFault = fmap parseDecl $
   [ "idX x y = x"
   , "compose f g x = f (g x)"
   
-  , "mapFst f p = case p of Unit () -> f ( Unit () )"
+  , "mapFst f p = case p of Pair (x, y) -> f ( Pair (x, y) )"
   , "mapPair f = compose (mapFst f) f"
   ]
   
