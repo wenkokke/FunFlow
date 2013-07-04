@@ -69,7 +69,7 @@ exCategory = fmap parseDecl $
   [ "compose f g x = f (g x)"
   , "id x = x"
   ]
-
+  
 exPair = fmap parseDecl $
   [ "pair x y = Pair (x,y)"
   , "fst p = case p of Pair(x,y) -> x"
@@ -140,12 +140,15 @@ exSum = fmap parseDecl $
  ++ "                       Either.Right y -> false"
   ]
 
-exNats = fmap parseDecl $
-  [ "add a = fix add b => case b of"
- ++ "                       Nat.Left u -> case u of () -> a"
- ++ "                       Nat.Right g -> Nat.Right (add g)"
+exFault = fmap parseDecl $
+  [ "idX x = x"
+  , "idY y = y"
+  , "compose f g x = f (g x)"
+  
+  , "mapFst f p = case p of Pair (x, y) -> Pair (f x, y)"
+  , "mapPair f = compose (mapFst f) (mapFst f)"
   ]
-
+  
 exUnion = concat $
   [ exCategory
   , exPair
@@ -159,4 +162,4 @@ exUnion = concat $
   , exSum
   ]
   
-example = exUnion  
+example = exFault

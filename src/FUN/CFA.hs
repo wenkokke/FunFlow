@@ -545,21 +545,7 @@ solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `un
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
---  declaration an available expression in the next.                                           
-{-
-runCFAx :: [Decl] -> Either TypeError (Env, Set Constraint)
-runCFAx = refreshAll . withFreshVars . foldl addDecl ( do env <- prelude; return (fst env, empty) ) . runLabel where
-  addDecl :: CFA (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
-  addDecl r (Decl x e) = do (env, c0) <- r
-                            (t, s1, c1) <- cfa e $ env
-                            
-                            let s2 = (M.empty, snd s1)
-                                
-                            return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
-                                   , subst s1 c0 `union` c1
-                                   )
-                                   -}
-
+--  declaration an available expression in the next.      
 
 runCFA :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
 runCFA ds = 
@@ -575,7 +561,7 @@ runCFA ds =
       
   in refreshAll . withFreshVars $ do (env, preds) <- prelude
   
-                                     let decList = runLabel $ preds ++ ds
+                                     let decList = runLabel $ ds
                                          
                                      (env, c0) <- foldM addDecl (env, empty) $ decList 
                                      return (env, Prog decList, c0)
