@@ -10,7 +10,10 @@ import FUN.Labeling                     -- ^ labeling
 import FUN.W (runW)                     -- ^ type inference
 import FUN.CFA 
   ( runCFA, prelude, TypeError, Env, Constraint, showType
-  , printFlow, solveConstraints, TVar (..), Type (..)
+  , printFlowInformation,  solveFlowConstraints
+  , printScaleInformation, solveScaleConstraints
+  , printBaseInformation,  solveBaseConstraints
+  , TVar (..), Type (..)
   ) -- ^ control flow analysis
 
 import Text.Printf (printf)
@@ -56,11 +59,14 @@ main =
         
       put :: (Env, Prog, Set Constraint) -> String
       put (m, p, w) = let programInfo = "program = " ++ printProgram p m
-                          annInfo  = "control flow = " ++ (printFlow . solveConstraints $ w)
+                          flowInfo  = "control flow = " ++ (printFlowInformation . solveFlowConstraints $ w)
+                          scaleInfo  = "scale constraints = " ++ (printScaleInformation . solveScaleConstraints $ w)
+                          baseInfo  = "base constraints = " ++ (printBaseInformation . solveBaseConstraints $ w)
                         
                       in    programInfo ++ "\n\n"
-                         ++ annInfo     ++ "\n\n"
-                       
+                         ++ flowInfo     ++ "\n\n"
+                         ++ scaleInfo     ++ "\n\n"
+                         ++ baseInfo     ++ "\n\n"
       env :: Either TypeError (Env, Prog, Set Constraint)
       env = runCFA prog
   in either print (putStrLn . put) env
@@ -140,13 +146,17 @@ exSum = fmap parseDecl $
  ++ "                       Either.Right y -> false"
   ]
 
-exFault = fmap parseDecl $
-  [ "idX x y = x"
-  , "compose f g x = f (g x)"
-  
-  , "mapFst f p = case p of Pair (x, y) -> f ( Pair (x, y) )"
-  , "mapPair f = compose (mapFst f) f"
-  ]
+exMeasure = fmap parseDecl $
+  [ "s1 = asMeters 3"
+  , "t1 = asSeconds 5"
+  , "v1 = s1 / t1"
+
+  , "s2 = asMeters 7"
+  , "t2 = asSeconds 11"
+  , "v2 = s2 / t2"
+  , "combinedSpeed = v1 + v2"
+  , "averageSpeed = combinedSpeed / 2"
+     ]
   
 exUnion = concat $
   [ exCategory
@@ -161,4 +171,4 @@ exUnion = concat $
   , exSum
   ]
   
-example = exFault
+example = exMeasure

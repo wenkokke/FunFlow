@@ -15,7 +15,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List as L (union)
 
---  import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
+-- import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join, foldM)
@@ -30,16 +30,17 @@ import qualified Data.Set as Set
 
 
 prelude :: CFA (Env, [Decl])
-prelude = if True then return (mempty, []) else
+prelude = if False then return (mempty, []) else
   let id = Abs noLabel "x" (Var "x")
       
       predefs =
         [ ("asKelvin",  id, \v -> TArr v (TInt SUnit BNone) (TInt SKelvin BNone)     )
         , ("asCelcius", id, \v -> TArr v (TInt SUnit BNone) (TInt SKelvin BFreezing) )
         , ("asFeet",    id, \v -> TArr v (TInt SUnit BNone) (TInt SFeet BNone)       )        
-        , ("asMeter",   id, \v -> TArr v (TInt SUnit BNone) (TInt SMeter BNone)      )        
-        , ("asDollar",  id, \v -> TArr v (TInt SUnit BNone) (TInt SDollar BNone)     )        
-        , ("asEuro",    id, \v -> TArr v (TInt SUnit BNone) (TInt SEuro BNone)       )
+        , ("asMeters",  id, \v -> TArr v (TInt SUnit BNone) (TInt SMeter BNone)      )        
+        , ("asDollars", id, \v -> TArr v (TInt SUnit BNone) (TInt SDollar BNone)     )        
+        , ("asEuros",   id, \v -> TArr v (TInt SUnit BNone) (TInt SEuro BNone)       )
+        , ("asSeconds", id, \v -> TArr v (TInt SUnit BNone) (TInt SSeconds BNone)    )
         ]
   in do ps <- mapM (\(nm, e, f) -> do v <- fresh; return ( (nm, f v), Decl nm e)) $ predefs
         let (env, ds) = unzip ps
@@ -78,7 +79,7 @@ showType cp =
                              then "" else
                           if b == BNone
                              then "{" ++ show s ++ "}"
-                             else "{" ++ show s ++ "/" ++ show b ++ "}" 
+                             else "{" ++ show s ++ "@" ++ show b ++ "}" 
         TVar n -> n
         TArr  v a b -> printf "%s -%s> %s" (wrap a) (printAnn v) (wrap b)
             where
@@ -98,9 +99,6 @@ showType cp =
             wrap ty                 = showType ty
         TUnit v nm -> printf "%s%s()" nm (printAnn v)
   in showType
-  
-data Constraint = FlowConstraint String Flow Label
-  deriving (Eq, Ord, Show)
 
 printFlow :: Map FVar (String, Set Label) -> String
 printFlow m = 
@@ -109,7 +107,7 @@ printFlow m =
       content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
-  
+    
 -- |Provides an infinite stream of names to things in the @CFA@ monad,
 --  reducing it to just an @Either@ value containing perhaps a TypeError.
 withFreshVars :: CFA a -> Either TypeError a
@@ -158,12 +156,13 @@ instance Singleton (Map k a) (k, a) where
   
 instance Singleton (Set k) k where
   singleton = S.singleton
-  
-instance Singleton Env (FVar, Flow) where
-  singleton (k, a) = (M.empty, emptyExtendedEnv { cfaMap = M.singleton k a })
 
 instance Singleton Env (TVar, Type) where
   singleton (k, a) = (M.singleton k a, emptyExtendedEnv)
+
+  
+instance Singleton Env (FVar, Flow) where
+  singleton (k, a) = (M.empty, emptyExtendedEnv { cfaMap = M.singleton k a })
 
 instance Singleton Env (SVar, Scale) where
   singleton (k, a) = (M.empty, emptyExtendedEnv { scaleMap = M.singleton k a })
@@ -179,7 +178,7 @@ class Subst w where
 -- |Substitutes a type for a type variable in a type.
 instance Subst Type where
   subst m TBool = TBool
-  subst m r@(TInt _ _)     = r
+  subst m r@(TInt s b)     = TInt (subst m s) (subst m b)
   subst m v@(TVar n)       = M.findWithDefault v n (fst m)
   subst m (TArr  v    a b) = TArr (subst m v) (subst m a) (subst m b)
   subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
@@ -191,15 +190,31 @@ instance Subst Flow where
   
 instance Subst Scale where
   subst m v@(SVar n) = M.findWithDefault v n (scaleMap $ snd m)
-
+  subst m (STimes a b) = STimes (subst m a) (subst m b) 
+  subst m (SInverse a) = SInverse (subst m a)
+  subst m v@_ = v
+  
 instance Subst Base where
   subst m v@(BVar n) = M.findWithDefault v n (baseMap $ snd m)
+  subst m v@_ = v
+  
+instance Subst Env where
+  subst m (r, w) = (fmap (subst m) r, w)  
+  
+instance Subst ScaleConstraint where
+  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
 
+instance Subst BaseConstraint where
+  subst m (BaseEquality ss) = BaseEquality $ map (subst m) ss
+  subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
+  subst m (BaseSelection (x, y) z) = BaseSelection (subst m x, subst m y) (subst m z)
+  
 instance Subst (Set Constraint) where
-  subst m cs = flip Set.map cs $ \(FlowConstraint nm v r) -> FlowConstraint nm (subst m v) r
-  
-  
-  
+  subst m = S.map mapper where
+    mapper (FlowConstraint nm v r) = FlowConstraint nm (subst m v) r
+    mapper (ScaleConstraint ss)    = ScaleConstraint $ subst m ss
+    mapper (BaseConstraint ss)     = BaseConstraint $ subst m ss
+    
 class Fresh t where
   fresh :: CFA t
 
@@ -208,6 +223,13 @@ instance Fresh Type where
   
 instance Fresh Flow where
   fresh = fmap FVar $ lift supply
+
+instance Fresh Scale where
+  fresh = fmap SVar $ lift supply
+  
+instance Fresh Base where
+  fresh = fmap BVar $ lift supply
+
 
   
 
@@ -248,6 +270,9 @@ type Env = (Map TVar Type, ExtendedEnv)
 
 type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
+preserveTypeSystem :: Bool
+preserveTypeSystem = True
+
 unifyScale :: Scale -> Scale -> CFA Env
 unifyScale s1 s2 = 
   case (s1, s2) of
@@ -260,7 +285,9 @@ unifyScale s1 s2 =
               -- Should be made a warning if we don't want the analysis to 
               -- reject programs that are valid according to the underlying
               -- type system.
-         else throwError $ MeasureError $ "incompatible scales used: " ++ show s1 ++ " vs. " ++ show s2
+         else if preserveTypeSystem
+                 then return $ mempty
+                 else throwError $ MeasureError $ "incompatible scales used: " ++ show s1 ++ " vs. " ++ show s2
                              
 
 unifyBase :: Base -> Base -> CFA Env
@@ -275,16 +302,18 @@ unifyBase b1 b2 =
               -- Should be made a warning if we don't want the analysis to 
               -- reject programs that are valid in the underlying
               -- type system.
-         else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
-    
+         else if preserveTypeSystem
+                 then return $ mempty
+                 else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
+ 
+
 -- |Unification as per Robinson's unification algorithm.
 u :: Type -> Type -> CFA Env
 u TBool TBool = return $ mempty
 u (TInt r1 b1) (TInt r2 b2)
-                  = do s0 <- unifyScale r1 r2
-                       s1 <- unifyBase b1 b2
-                       return (s1 <> s0)
-                  
+                   = do s0 <- unifyScale r1 r2
+                        s1 <- unifyBase b1 b2
+                        return (s1 <> s0)
 u (TArr (FVar p1) a1 b1) (TArr p2 a2 b2)
                   = do let s0 = singleton (p1, p2)
                        s1 <- subst s0 a1 `u` subst s0 a2
@@ -392,7 +421,7 @@ cfa exp env = case exp of
 
                         
   App f e         -> do (t1, s1, c1) <- cfa f $ env
-                        (t2, s2, c2) <- cfa e $ s1 <> env
+                        (t2, s2, c2) <- cfa e . subst s1 $ env
                         
                         a <- fresh;
                         b <- fresh
@@ -406,7 +435,7 @@ cfa exp env = case exp of
                                )
   
   Let x e1 e2     -> do (t1, s1, c1) <- cfa e1 $ env;
-                        (t2, s2, c2) <- cfa e2 . (x ~> t1) $ s1 <> env
+                        (t2, s2, c2) <- cfa e2 . (x ~> t1) . subst s1 $ env
 
                         return ( t2
                                , s2 <> s1
@@ -416,9 +445,9 @@ cfa exp env = case exp of
                     
   -- * adding if-then-else constructs
                     
-  ITE b e1 e2     -> do (t0, s0, c0) <- cfa b  $ env;
-                        (t1, s1, c1) <- cfa e1 $ s0 <> env
-                        (t2, s2, c2) <- cfa e2 $ s1 <> s0 <> env
+  ITE b e1 e2     -> do (t0, s0, c0) <- cfa b $ env;
+                        (t1, s1, c1) <- cfa e1 . subst s0 $ env
+                        (t2, s2, c2) <- cfa e2 . subst (s1 <> s0) $ env
                         
                         s3 <- subst (s2 <> s1) t0 `u` TBool
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
@@ -438,13 +467,14 @@ cfa exp env = case exp of
                                       )
   -- * adding product types
   Con pi nm (Prod x y)   -> do (t1, s1, c1) <- cfa x $ env
-                               (t2, s2, c2) <- cfa y $ s1 <> env
+                               (t2, s2, c2) <- cfa y . subst s1 $ env
       
                                b_0 <- fresh
       
                                return ( TProd b_0 nm (subst s2 t1) t2
                                       , s2 <> s1
-                                      , subst s2 c1 `union` c1 `union` constraint nm b_0 pi 
+                                      , subst s2 c1 `union` 
+                                                 c1 `union` constraint nm b_0 pi 
                                       )
   -- * adding sum types
   Con pi nm (Sum L t)   -> do (t1, s1, c1) <- cfa t $ env
@@ -472,11 +502,11 @@ cfa exp env = case exp of
                                              
                                   s2 <- t1 `u` TUnit b_0 nm
                                   
-                                  (t3, s3, c3) <- cfa e2 $ s2 <> s1 <> env
+                                  (t3, s3, c3) <- cfa e2 . subst (s2 <> s1) $ env
                                   
                                   return ( t3
                                          , s3 <> s2 <> s1
-                                         , c3 `union` c1
+                                         , subst (s3 <> s2) c1 `union` c3
                                          )
 
   Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 $ env
@@ -487,7 +517,7 @@ cfa exp env = case exp of
                                     b_0 <- fresh
                                     
                                     s2 <- t1 `u` TProd b_0 nm a_x a_y
-                                    (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) $ s2 <> s1 <> env
+                                    (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
 
                                     return ( t3
                                            , s3 <> s2 <> s1
@@ -503,8 +533,8 @@ cfa exp env = case exp of
                                               
                                               s2 <- t1 `u` TSum b_0 nm a_x a_y
                                              
-                                              (tx, s3, c3) <- cfa ex . (x ~> a_x) $ s2 <> s1 <> env
-                                              (ty, s4, c4) <- cfa ey . (y ~> a_y) $ s3 <> s2 <> s1 <> env
+                                              (tx, s3, c3) <- cfa ex . (x ~> a_x) . subst (s2 <> s1) $ env
+                                              (ty, s4, c4) <- cfa ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
                                              
                                               s5 <- tx `u` ty
                                              
@@ -515,33 +545,128 @@ cfa exp env = case exp of
                                                        subst  s5                    c4 
                                                      )
 
-  Operator op x y -> do (tx, s1, c1) <- cfa x $ env    
-                        (ty, s2, c2) <- cfa y $ s1 <> env
-                        
-                        s3 <- tx `u` ty
-                        
-                        return ( subst s3 tx
-                               , s3 <> s2 <> s1
-                               , c1 `union` c2
-                               )
-
-solveConstraints :: Set Constraint -> Map FVar (String, Set Label)
-solveConstraints = M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . map extractConstraint . S.toList where
-  mergeNames p q = let (np, cp) = span (/= '.') p
-                       (nq, cq) = span (/= '.') q
-                   in if np == nq
-                         then if cp == cq
-                                 then p
-                                 else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
-                         else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
+  Oper op x y -> do rx <- fresh
+                    bx <- fresh
                     
-  extractConstraint (FlowConstraint nm v l) = case v of
-                                          FVar r -> M.singleton r (nm, S.singleton l)
+                    ry <- fresh
+                    by <- fresh
+                                        
+                    (t1, s1, c1) <- cfa x $ env    
+                    s2 <- t1 `u` TInt rx bx
+                    
+                    
+                    (t3, s3, c3) <- cfa y . subst (s2 <> s1) $ env
+                    s4 <- t3 `u` TInt ry by
+                    
+                    rz <- fresh
+                    bz <- fresh
+                    
+                    let c0 = case op of
+                          Add -> scaleEquality [rx, ry, rz]                  `union` selectBase   (bx, by) bz                                    
+                          Sub -> scaleEquality [rx, ry, rz]                  `union` preserveBase (bx, by) bz                                                         
+                          Mul -> scaleEquality [rz, (STimes rx ry)]          `union` baseEquality [bx, by, bz, BNone]
+                          Div -> scaleEquality [rz, STimes rx (SInverse ry)] `union` baseEquality [bx, by, bz, BNone]      
+                                                           
+
+                    return ( TInt rz bz
+                           , s4 <> s3 <> s2 <> s1
+                           , subst (s4 <> s3 <> s2 <> s1) c0 `union`
+                             subst (s4 <> s3 <> s2)       c1 `union` 
+                             subst  s4                    c3       
+                           )
+  
+data Constraint 
+  = FlowConstraint String Flow Label
+  | ScaleConstraint ScaleConstraint
+  | BaseConstraint BaseConstraint
+  deriving (Eq, Ord, Show)
+
+   
+scaleEquality :: [Scale] -> Set Constraint
+scaleEquality = S.singleton . ScaleConstraint . ScaleEquality
+
+baseEquality :: [Base] -> Set Constraint
+baseEquality = S.singleton . BaseConstraint . BaseEquality 
+
+selectBase :: (Base, Base) -> Base -> Set Constraint
+selectBase xy z = S.singleton $ BaseConstraint $ BaseSelection xy z 
+
+preserveBase :: (Base, Base) -> Base -> Set Constraint
+preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z 
+
+solveFlowConstraints :: Set Constraint -> Map FVar (String, Set Label)
+solveFlowConstraints = 
+  let mergeNames p q = let (np, cp) = span (/= '.') p
+                           (nq, cq) = span (/= '.') q
+                       in if np == nq
+                             then if cp == cq
+                                     then p
+                                     else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
+                             else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
+                    
+      extractFlowConstraint (FlowConstraint nm v l) = 
+        case v of
+          FVar r -> [M.singleton r (nm, S.singleton l)]
+      extractFlowConstraint _ = []
+  in M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . concatMap extractFlowConstraint . S.toList
+     
+data ScaleConstraint
+  = ScaleEquality [Scale]
+    deriving (Eq, Ord)
+     
+instance Show ScaleConstraint where
+  show (ScaleEquality ss) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ ss) 
+     
+solveScaleConstraints :: Set Constraint -> [ScaleConstraint]
+solveScaleConstraints = concatMap findScales . S.toList where
+  findScales (ScaleConstraint ss) = [ss]
+  findScales _                    = [  ]
+
+data BaseConstraint 
+  = BaseEquality [Base] 
+  | BasePreservation (Base, Base) Base
+  | BaseSelection (Base, Base) Base
+    deriving (Eq, Ord)
+    
+instance Show BaseConstraint where
+  show (BaseEquality bs) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ bs) 
+  show (BasePreservation (x, y) z) = "preservation: if " ++ show y ++ " = none then " ++ show x 
+                                              ++ "; if " ++ show x ++ " = " ++ show y ++ "then none" 
+                                              ++ "; else undefined"
+  show (BaseSelection (x, y) z) = "selection: if " ++ show y ++ " = none then " ++ show x
+                                        ++ "; if " ++ show x ++ " = none then " ++ show y
+                                        ++ "; else error"
+    
+solveBaseConstraints :: Set Constraint -> [BaseConstraint]
+solveBaseConstraints = concatMap findBases . S.toList where
+  findBases (BaseConstraint bs) = [bs]
+  findBases _                   = [  ]
 
 
-     
-     
-                  
+printFlowInformation :: Map FVar (String, Set Label) -> String
+printFlowInformation m = 
+  let prefix = "{\n"
+      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
+      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
+      suffix = "}"
+  in prefix ++ content ++ suffix
+
+printScaleInformation :: [ScaleConstraint] -> String
+printScaleInformation m =
+  let prefix = "{\n"
+      content = foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
+      suffix = "}"
+  in prefix ++ content ++ suffix
+
+printBaseInformation :: [BaseConstraint] -> String
+printBaseInformation m = 
+  let prefix = "{\n"
+      content = foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
+      suffix = "}"
+  in prefix ++ content ++ suffix
+
+
+   
 -- * Algorithm W for Type Inference
 
 -- |Runs algorithm W on a list of declarations, making each previous
@@ -559,10 +684,9 @@ runCFA ds =
                                                )                                          
 
       
-  in refreshAll . withFreshVars $ do (env, preds) <- prelude
+  in refreshAll . withFreshVars $ do (env, lib) <- prelude
   
-                                     let decList = runLabel $ ds
-                                         
-                                     (env, c0) <- foldM addDecl (env, empty) $ decList 
-                                     return (env, Prog decList, c0)
-                                     
+                                     let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
+  
+                                     (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
+                                     return (env, Prog $ labeledLib ++ labeledDecls, c0)

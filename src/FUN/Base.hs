@@ -18,34 +18,38 @@ type BVar = Name -- Base Variable
 
  
 data Scale
-  = SUnit
-  | SVar SVar
+  = SVar SVar
   | STimes Scale Scale
   | SInverse Scale
-  | SFeet   | SMeter 
-  | SDollar | SEuro 
-  | SKelvin | SCelcius  
+  | SUnit
+  | SFeet    | SMeter 
+  | SDollar  | SEuro 
+  | SKelvin  | SCelcius
+  | SSeconds | SMinutes | SHours
     deriving (Eq, Ord)
 
 instance Show Scale where
   show SUnit = "Unit"
-  show (SVar v) = show v
+  show (SVar v) = "[" ++ v ++ "]"
+  show (STimes a (SInverse b)) = "(" ++ show a ++ "/" ++ show b ++ ")"
   show (STimes a b) = "(" ++ show a ++ "*" ++ show b ++ ")"
   show (SInverse s) = "1/(" ++ show s ++ ")"
-  show SFeet = "Feet"
-  show SMeter = "Meter"
-  show SDollar = "Dollar"
-  show SEuro = "Euro"
-  show SKelvin = "Kelvin"
-  show SCelcius = "Celcius"
-    
-data Base
-  = BNone
-  | BVar BVar
-  | BFreezing
-    deriving (Eq, Ord, Show)
-
+  show SFeet    = "Feet"   ; show SMeter   = "Meter"
+  show SDollar  = "Dollar" ; show SEuro    = "Euro"
+  show SKelvin  = "Kelvin" ; show SCelcius = "Celcius"
+  show SSeconds = "Seconds"; show SMinutes = "Minutes"; show SHours = "Hours"
   
+data Base
+  = BVar BVar
+  | BNone 
+  | BFreezing
+    deriving (Eq, Ord)
+
+instance Show Base where
+  show BNone = "None"
+  show (BVar v) = "[" ++ v ++ "]"
+  show BFreezing = "Freezing"
+
 data Lit
   = Bool Bool
   | Integer Scale Base Integer
@@ -55,6 +59,7 @@ data Lit
 data Op 
   = Add | Sub | Mul | Div  
     deriving Eq
+    
 instance Show Op where
   show Add = "+"
   show Sub = "-"
@@ -74,7 +79,7 @@ data Expr
   | Con  Label Name Con
   | Des  Name Expr  Des
 
-  | Operator Op Expr Expr
+  | Oper Op Expr Expr
   deriving (Eq)
 
 data LR = L | R
@@ -165,7 +170,12 @@ letn defs e = foldr (\(Decl x e) -> Let x e) e defs
   
 -- |Constructs a binary operator
 bin :: Name -> Expr -> Expr -> Expr
-bin op x y = App (App (Var op) x) y
+bin op x y = Oper r x y where
+  r = case op of
+        "+" -> Add
+        "-" -> Sub
+        "*" -> Mul
+        "/" -> Div
 
 -- * Printing AST as program
 
@@ -188,7 +198,7 @@ showExpr cp =
         Con l nm  con   -> printf "%s%s" (showAnn l) (showCon cp nm con)
         Des nm exp des  -> printf "case %s of %s" (showExpr exp) (showDes cp nm des)
                                         
-        Operator op x y -> printf "(%s %s %s%)" (showExpr x) (show op) (showExpr y)                                    
+        Oper op x y -> printf "(%s %s %s)" (showExpr x) (show op) (showExpr y)                                    
   in showExpr
 
 showCon :: Bool -> Name -> Con -> String
@@ -206,9 +216,6 @@ showDes cp nm (UnSum  (xl, el) (xr, er)) = printf "%s.Left %s -> %s ; %s.Right %
 instance Show Prog where show (Prog ds) = unlines (map show ds)
 instance Show Decl where show = showDecl False
 instance Show Expr where show = showExpr False
-
---instance Show Con  where show = showCon False
---instance Show Des  where show = showDes False
 
 instance Show Lit where
   show (Bool b) = case b of True -> "true"; False -> "false"

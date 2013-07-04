@@ -11,6 +11,9 @@ class Labelable a where
 instance (Labelable a) => (Labelable [a]) where
   label = mapM label
   
+instance (Labelable a, Labelable b) => Labelable (a, b) where
+  label (a, b) = do a <- label a; b <- label b; return (a, b)
+  
 instance Labelable Prog where
   label (Prog ds) = do ds <- label ds; return (Prog ds)
   
@@ -28,6 +31,7 @@ instance Labelable Expr where
   label (Con _ nm c)      = do l  <- supply   ; c  <- label c  ; return (Con l nm c)
   label (Des nm e d)      = do e  <- label e  ; d  <- label d  ; return (Des nm e d)
   label (ITE b e1 e2)     = do b  <- label b  ; e1 <- label e1 ; e2 <- label e2; return (ITE b e1 e2)
+  label (Oper op x y)     = do x  <- label x  ; y  <- label y  ; return (Oper op x y)
   
 instance Labelable Con where
   label Unit = return Unit
