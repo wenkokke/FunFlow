@@ -3,7 +3,7 @@
 module FUN.Analyses where
 
 import FUN.Base
-import FUN.Parsing ( )
+import FUN.Scales
 import FUN.Labeling
 
 import Text.Printf (printf)
@@ -33,18 +33,18 @@ import Data.Set ( Set, empty, union )
 import qualified Data.Set as Set
 
 
-prelude :: CFA (Env, [Decl])
+prelude :: Analysis (Env, [Decl])
 prelude = if False then return (mempty, []) else
   let id = Abs noLabel "x" (Var "x")
       
       predefs =
-        [ ("asKelvin",  id, \v -> TArr v (TInt SUnit BNone) (TInt SKelvin BNone)     )
-        , ("asCelcius", id, \v -> TArr v (TInt SUnit BNone) (TInt SKelvin BFreezing) )
-        , ("asFeet",    id, \v -> TArr v (TInt SUnit BNone) (TInt SFeet BNone)       )        
-        , ("asMeters",  id, \v -> TArr v (TInt SUnit BNone) (TInt SMeter BNone)      )        
-        , ("asDollars", id, \v -> TArr v (TInt SUnit BNone) (TInt SDollar BNone)     )        
-        , ("asEuros",   id, \v -> TArr v (TInt SUnit BNone) (TInt SEuro BNone)       )
-        , ("asSeconds", id, \v -> TArr v (TInt SUnit BNone) (TInt SSeconds BNone)    )
+        [ ("asKelvin",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" )  BNil))
+        , ("asCelcius", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" ) (BCon "Freezing")))
+        , ("asFeet",    id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Feet"   )  BNil))        
+        , ("asMeters",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Meter"  )  BNil))        
+        , ("asDollars", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Dollar" )  BNil))        
+        , ("asEuros",   id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Euro"   )  BNil))
+        , ("asSeconds", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Seconds")  BNil))
         ]
   in do ps <- mapM (\(nm, e, f) -> do v <- fresh; return ( (nm, f v), Decl nm e)) $ predefs
         let (env, ds) = unzip ps
@@ -79,9 +79,9 @@ showType cp =
       showType ty = case ty of 
         TBool -> "Bool"
         TInt s b -> "Integer" ++ showScaleBase where
-          showScaleBase = if s == SUnit
+          showScaleBase = if s == SNil
                              then "" else
-                          if b == BNone
+                          if b == BNil
                              then "{" ++ show s ++ "}"
                              else "{" ++ show s ++ "@" ++ show b ++ "}" 
         TVar n -> n
@@ -112,9 +112,9 @@ printFlow m =
       suffix = "}"
   in prefix ++ content ++ suffix
     
--- |Provides an infinite stream of names to things in the @CFA@ monad,
+-- |Provides an infinite stream of names to things in the @Analysis@ monad,
 --  reducing it to just an @Either@ value containing perhaps a TypeError.
-withFreshVars :: CFA a -> Either TypeError a
+withFreshVars :: Analysis a -> Either TypeError a
 withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
   where
   freshAVars = fmap show [0..]
@@ -130,9 +130,9 @@ refreshAll env = do (env, p, c) <- env;
                     return ((m, snd env), p, c) 
 
 -- |Replaces every type variable with a fresh one.
-refresh :: Type -> CFA Type
+refresh :: Type -> Analysis Type
 refresh t1 = do subs <- forM (ftv t1) $ \a ->
-                          do b <- fresh :: CFA Type
+                          do b <- fresh :: Analysis Type
                              return $ singleton (a, b)
                 return $ subst (mconcat subs) t1
 
@@ -163,7 +163,6 @@ instance Singleton (Set k) k where
 
 instance Singleton Env (TVar, Type) where
   singleton (k, a) = (M.singleton k a, emptyExtendedEnv)
-
   
 instance Singleton Env (FVar, Flow) where
   singleton (k, a) = (M.empty, emptyExtendedEnv { cfaMap = M.singleton k a })
@@ -173,8 +172,6 @@ instance Singleton Env (SVar, Scale) where
 
 instance Singleton Env (BVar, Base) where
   singleton (k, a) = (M.empty, emptyExtendedEnv { baseMap = M.singleton k a })
-
-
 
 class Subst w where
   subst :: Env -> w -> w
@@ -194,8 +191,8 @@ instance Subst Flow where
   
 instance Subst Scale where
   subst m v@(SVar n) = M.findWithDefault v n (scaleMap $ snd m)
-  subst m (STimes a b) = STimes (subst m a) (subst m b) 
-  subst m (SInverse a) = SInverse (subst m a)
+  subst m (SMul a b) = SMul (subst m a) (subst m b) 
+  subst m (SInv a) = SInv (subst m a)
   subst m v@_ = v
   
 instance Subst Base where
@@ -223,7 +220,7 @@ instance Subst (Set Constraint) where
     mapper (BaseConstraint ss)     = BaseConstraint $ subst m ss
     
 class Fresh t where
-  fresh :: CFA t
+  fresh :: Analysis t
 
 instance Fresh Type where
   fresh = fmap TVar $ lift (lift supply)
@@ -236,9 +233,6 @@ instance Fresh Scale where
   
 instance Fresh Base where
   fresh = fmap BVar $ lift supply
-
-
-  
 
 -- |Representation for possible errors in algorithm W.
 data TypeError
@@ -275,12 +269,12 @@ data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar Flow, scaleMap :: Map SVar S
      deriving Show 
 type Env = (Map TVar Type, ExtendedEnv)
 
-type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
+type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 preserveTypeSystem :: Bool
 preserveTypeSystem = True
 
-unifyScale :: Scale -> Scale -> CFA Env
+unifyScale :: Scale -> Scale -> Analysis Env
 unifyScale s1 s2 = 
   case (s1, s2) of
     (SVar v1, SVar v2) -> return $ singleton (v1, s2)
@@ -297,7 +291,7 @@ unifyScale s1 s2 =
                  else throwError $ MeasureError $ "incompatible scales used: " ++ show s1 ++ " vs. " ++ show s2
                              
 
-unifyBase :: Base -> Base -> CFA Env
+unifyBase :: Base -> Base -> Analysis Env
 unifyBase b1 b2 = 
   case (b1, b2) of
     (BVar v1, BVar v2) -> return $ singleton (v1, b2)
@@ -315,7 +309,7 @@ unifyBase b1 b2 =
  
 
 -- |Unification as per Robinson's unification algorithm.
-u :: Type -> Type -> CFA Env
+u :: Type -> Type -> Analysis Env
 u TBool TBool = return $ mempty
 u (TInt r1 b1) (TInt r2 b2)
                    = do s0 <- unifyScale r1 r2
@@ -385,7 +379,7 @@ constraint nm a l = singleton $ FlowConstraint nm a l
 
     
 -- |Algorithm W for type inference.
-cfa :: Expr -> Env -> CFA (Type, Env, Set Constraint)
+cfa :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
 cfa exp env = case exp of
   Lit l           -> return ( typeOf l
                             , mempty
@@ -571,8 +565,8 @@ cfa exp env = case exp of
                     let c0 = case op of
                           Add -> scaleEquality [rx, ry, rz]                  `union` selectBase   (bx, by) bz                                    
                           Sub -> scaleEquality [rx, ry, rz]                  `union` preserveBase (bx, by) bz                                                         
-                          Mul -> scaleEquality [rz, (STimes rx ry)]          `union` baseEquality [bx, by, bz, BNone]
-                          Div -> scaleEquality [rz, STimes rx (SInverse ry)] `union` baseEquality [bx, by, bz, BNone]      
+                          Mul -> scaleEquality [rz, (SMul rx ry)]          `union` baseEquality [bx, by, bz, BNil]
+                          Div -> scaleEquality [rz, SMul rx (SInv ry)] `union` baseEquality [bx, by, bz, BNil]      
                                                            
 
                     return ( TInt rz bz
@@ -688,9 +682,9 @@ printBaseInformation m =
 -- |Runs algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.      
 
-runCFA :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
-runCFA ds = 
-  let addDecl :: (Env, Set Constraint) -> Decl-> CFA (Env, Set Constraint)
+analyse :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
+analyse ds = 
+  let addDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
       addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- cfa e $ env
                                   
                                         let s2 = (M.empty, snd s1)

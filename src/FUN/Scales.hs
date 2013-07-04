@@ -1,19 +1,21 @@
 module FUN.Scales where
 
-type Var    = String
-type Const  = String
+type SVar = String
+type SCon = String
+type BVar = String
+type BCon = String
 
 data Scale
-  = SVar Var
-  | SCon Const
+  = SVar SVar
+  | SCon SCon
   | SNil
   | SMul Scale Scale
   | SInv Scale
   deriving (Eq, Ord)
 
 data Base
-  = BVar Var
-  | BCon Const
+  = BVar BVar
+  | BCon BCon
   | BNil
   deriving (Eq, Ord)
 
