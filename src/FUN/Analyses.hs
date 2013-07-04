@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
-module FUN.CFA where
+module FUN.Analyses where
 
 import FUN.Base
 import FUN.Parsing ( )

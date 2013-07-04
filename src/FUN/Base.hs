@@ -2,6 +2,7 @@ module FUN.Base where
 
 import Prelude hiding (abs)
 import Text.Printf (printf)
+import FUN.Scales (Scale (SNil), Base (BNil))
 
 -- * Abstract syntax tree for the FUN language
 
@@ -13,49 +14,11 @@ data Decl
   = Decl Name Expr
   deriving (Eq)
 
-type SVar = Name -- Scale Variable
-type BVar = Name -- Base Variable
-
- 
-data Scale
-  = SVar SVar
-  | STimes Scale Scale
-  | SInverse Scale
-  | SUnit
-  | SFeet    | SMeter 
-  | SDollar  | SEuro 
-  | SKelvin  | SCelcius
-  | SSeconds | SMinutes | SHours
-    deriving (Eq, Ord)
-
-instance Show Scale where
-  show SUnit = "Unit"
-  show (SVar v) = "[" ++ v ++ "]"
-  show (STimes a (SInverse b)) = "(" ++ show a ++ "/" ++ show b ++ ")"
-  show (STimes a b) = "(" ++ show a ++ "*" ++ show b ++ ")"
-  show (SInverse s) = "1/(" ++ show s ++ ")"
-  show SFeet    = "Feet"   ; show SMeter   = "Meter"
-  show SDollar  = "Dollar" ; show SEuro    = "Euro"
-  show SKelvin  = "Kelvin" ; show SCelcius = "Celcius"
-  show SSeconds = "Second"; show SMinutes = "Minute"; show SHours = "Hour"
-  
-data Base
-  = BVar BVar
-  | BNone 
-  | BFreezing
-    deriving (Eq, Ord)
-
-instance Show Base where
-  show BNone = "None"
-  show (BVar v) = "[" ++ v ++ "]"
-  show BFreezing = "Freezing"
-
 data Lit
   = Bool Bool
   | Integer Scale Base Integer
   deriving (Eq)
-  
-  
+
 data Op 
   = Add | Sub | Mul | Div  
     deriving Eq
@@ -65,7 +28,7 @@ instance Show Op where
   show Sub = "-"
   show Mul = "*"
   show Div = "/"
-    
+
 data Expr
   = Lit  Lit
   | Var  Name
@@ -75,7 +38,7 @@ data Expr
   | Bin  Name Expr Expr
   | Let  Name Expr Expr
   | ITE  Expr Expr Expr
-
+  
   | Con  Label Name Con
   | Des  Name Expr  Des
 
@@ -176,6 +139,9 @@ bin op x y = Oper r x y where
         "-" -> Sub
         "*" -> Mul
         "/" -> Div
+        
+-- |Constructs an integer literal
+integer = Integer SNil BNil
 
 -- * Printing AST as program
 
@@ -220,8 +186,8 @@ instance Show Expr where show = showExpr False
 instance Show Lit where
   show (Bool b) = case b of True -> "true"; False -> "false"
   show (Integer s b n) = show n ++ showAnn 
-    where  showAnn = if s /= SUnit 
-                        then if b /= BNone
-                                then "(" ++ show s ++ "/" ++ show b ++ ")"
-                                else " " ++ show s
-                        else ""
+    where showAnn = if s /= SNil 
+                       then if b /= BNil
+                               then "(" ++ show s ++ "/" ++ show b ++ ")"
+                               else " " ++ show s
+                       else ""

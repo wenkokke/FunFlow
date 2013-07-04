@@ -27,9 +27,9 @@ pExpr = (pAbs <|> pFix <|> pITE <|> pLet <|> pCon <|> pDes <|> pList) <<|> pBin
   where
   
   -- literal expressions
-  pLit = Integer SUnit BNone <$> pInteger
-     <|> Bool True  <$  pSymbol "true"
-     <|> Bool False <$  pSymbol "false"
+  pLit = integer <$> pInteger
+     <|> Bool True  <$ pSymbol "true"
+     <|> Bool False <$ pSymbol "false"
     
   -- atomic expressions
   pAtom = Lit <$> pLit
