@@ -90,30 +90,6 @@ showType cp =
         TUnit v nm -> printf "%s%s()" nm (printAnn v)
   in showType
 
--- |Provides an infinite stream of names to things in the @Analysis@ monad,
---  reducing it to just an @Either@ value containing perhaps a TypeError.
-withFreshVars :: Analysis a -> Either TypeError a
-withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
-  where
-  freshAVars = fmap show [0..]
-  freshTVars = letters ++ numbers
-    where
-    letters = fmap (: []) ['a'..'z']
-    numbers = fmap (('t' :) . show) [0..]
-
--- |Refreshes all entries in a type environment.
-refreshAll :: Either TypeError (Env, Prog, Set Constraint) -> Either TypeError (Env, Prog, Set Constraint)
-refreshAll env = do (env, p, c) <- env;
-                    m <- mapM (withFreshVars . refresh) $ fst env
-                    return ((m, snd env), p, c)
-
--- |Replaces every type variable with a fresh one.
-refresh :: Type -> Analysis Type
-refresh t1 = do subs <- forM (ftv t1) $ \a ->
-                          do b <- fresh :: Analysis Type
-                             return $ singleton (a, b)
-                return $ subst (mconcat subs) t1
-
 -- |Returns the set of free type variables in a type.
 ftv :: Type -> [TVar]
 ftv TBool           = [ ]
@@ -124,21 +100,6 @@ ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TUnit _ _)     = [ ]
 
-class Fresh t where
-  fresh :: Analysis t
-
-instance Fresh Type where
-  fresh = fmap TVar $ lift (lift supply)
-
-instance Fresh Flow where
-  fresh = fmap FVar $ lift supply
-
-instance Fresh Scale where
-  fresh = fmap SVar $ lift supply
-
-instance Fresh Base where
-  fresh = fmap BVar $ lift supply
-
 -- |Representation for possible errors in algorithm W.
 data TypeError
   = CannotDestruct  Type      -- ^ thrown when attempting to destruct a non-product
@@ -147,12 +108,11 @@ data TypeError
   | OccursCheck     TVar Type -- ^ thrown when occurs check in unify fails
   | CannotUnify     Type Type -- ^ thrown when types cannot be unified
   | OtherError      String    -- ^ stores miscellaneous errors
-  | NoMsg                     -- ^ please don't be a jackass; don't use this
   | MeasureError    String
   deriving Eq
 
 instance Error TypeError where
-  noMsg       = NoMsg
+  noMsg       = OtherError "no message"
   strMsg msg  = OtherError msg
 
 instance Show TypeError where
@@ -162,7 +122,6 @@ instance Show TypeError where
   show (OccursCheck    n t) = printf "Occurs check fails: %s occurs in %s" n (show t)
   show (CannotUnify    a b) = printf "Cannot unify %s with %s" (show a) (show b)
   show (OtherError     msg) = msg
-  show (NoMsg             ) = "nope"
   show (MeasureError     s) = "Unit of Measure Error: " ++ s
 
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
@@ -189,9 +148,32 @@ mempty = (M.empty, emptyExtendedEnv)
 mconcat :: [Env] -> Env
 mconcat = foldr (<>) mempty
 
--- |Algorithm W for type inference.
-cfa :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
-cfa exp env = case exp of
+-- * Algorithm W for Type Inference
+
+-- |Runs Algorithm W on a list of declarations, making each previous
+--  declaration an available expression in the next.
+analyse :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
+analyse ds =
+  let addDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
+      addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- w e $ env
+
+                                        let s2 = (M.empty, snd s1)
+
+                                        return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
+                                               , subst s1 c0 `union` c1
+                                               )
+
+  in refreshAll . withFreshVars $ do (env, lib) <- prelude
+
+                                     let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
+
+                                     (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
+
+                                     return (env, Prog $  (labeledLib ++ labeledDecls), c0)
+
+-- |Runs the Algorithm W inference for types, control flow and measures.
+w :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
+w exp env = case exp of
   Lit l           -> return ( typeOf l
                             , mempty
                             , empty
@@ -207,7 +189,7 @@ cfa exp env = case exp of
   Abs pi x e      -> do a_x <- fresh
                         b_0 <- fresh
 
-                        (t0, s0, c0) <- cfa e . (x ~> a_x) $ env
+                        (t0, s0, c0) <- w e . (x ~> a_x) $ env
 
                         return ( TArr b_0 (subst s0 a_x) t0
                                , s0
@@ -220,7 +202,7 @@ cfa exp env = case exp of
                         a_0 <- fresh
                         b_0 <- fresh
 
-                        (t0, s0, c0) <- cfa e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
+                        (t0, s0, c0) <- w e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
 
                         s1 <- t0 `u` subst s0 a_0
 
@@ -232,8 +214,8 @@ cfa exp env = case exp of
                                )
 
 
-  App f e         -> do (t1, s1, c1) <- cfa f $ env
-                        (t2, s2, c2) <- cfa e . subst s1 $ env
+  App f e         -> do (t1, s1, c1) <- w f $ env
+                        (t2, s2, c2) <- w e . subst s1 $ env
 
                         a <- fresh;
                         b <- fresh
@@ -246,8 +228,8 @@ cfa exp env = case exp of
                                  subst  s3        c2
                                )
 
-  Let x e1 e2     -> do (t1, s1, c1) <- cfa e1 $ env;
-                        (t2, s2, c2) <- cfa e2 . (x ~> t1) . subst s1 $ env
+  Let x e1 e2     -> do (t1, s1, c1) <- w e1 $ env;
+                        (t2, s2, c2) <- w e2 . (x ~> t1) . subst s1 $ env
 
                         return ( t2
                                , s2 <> s1
@@ -257,9 +239,9 @@ cfa exp env = case exp of
 
   -- * adding if-then-else constructs
 
-  ITE b e1 e2     -> do (t0, s0, c0) <- cfa b $ env;
-                        (t1, s1, c1) <- cfa e1 . subst s0 $ env
-                        (t2, s2, c2) <- cfa e2 . subst (s1 <> s0) $ env
+  ITE b e1 e2     -> do (t0, s0, c0) <- w b $ env;
+                        (t1, s1, c1) <- w e1 . subst s0 $ env
+                        (t2, s2, c2) <- w e2 . subst (s1 <> s0) $ env
 
                         s3 <- subst (s2 <> s1) t0 `u` TBool
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
@@ -278,8 +260,8 @@ cfa exp env = case exp of
                                       , flowConstraint nm b_0 pi
                                       )
   -- * adding product types
-  Con pi nm (Prod x y)   -> do (t1, s1, c1) <- cfa x $ env
-                               (t2, s2, c2) <- cfa y . subst s1 $ env
+  Con pi nm (Prod x y)   -> do (t1, s1, c1) <- w x $ env
+                               (t2, s2, c2) <- w y . subst s1 $ env
 
                                b_0 <- fresh
 
@@ -289,7 +271,7 @@ cfa exp env = case exp of
                                                  c1 `union` flowConstraint nm b_0 pi
                                       )
   -- * adding sum types
-  Con pi nm (Sum L t)   -> do (t1, s1, c1) <- cfa t $ env
+  Con pi nm (Sum L t)   -> do (t1, s1, c1) <- w t $ env
                               t2 <- fresh
 
                               b_0 <- fresh
@@ -298,7 +280,7 @@ cfa exp env = case exp of
                                       , s1
                                       , c1 `union` flowConstraint (nm ++ ".Left") b_0 pi
                                       )
-  Con pi nm (Sum R t)   -> do (t2, s1, c1) <- cfa t $ env
+  Con pi nm (Sum R t)   -> do (t2, s1, c1) <- w t $ env
                               t1 <- fresh
 
                               b_0 <- fresh
@@ -308,20 +290,20 @@ cfa exp env = case exp of
                                       , c1 `union` flowConstraint (nm ++ ".Right") b_0 pi
                                       )
 
-  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- cfa e1 $ env
+  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- w e1 $ env
 
                                   b_0 <- fresh
 
                                   s2 <- t1 `u` TUnit b_0 nm
 
-                                  (t3, s3, c3) <- cfa e2 . subst (s2 <> s1) $ env
+                                  (t3, s3, c3) <- w e2 . subst (s2 <> s1) $ env
 
                                   return ( t3
                                          , s3 <> s2 <> s1
                                          , subst (s3 <> s2) c1 `union` c3
                                          )
 
-  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- cfa e1 $ env
+  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- w e1 $ env
 
                                     a_x <- fresh
                                     a_y <- fresh
@@ -329,14 +311,14 @@ cfa exp env = case exp of
                                     b_0 <- fresh
 
                                     s2 <- t1 `u` TProd b_0 nm a_x a_y
-                                    (t3, s3, c3) <- cfa e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
+                                    (t3, s3, c3) <- w e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
 
                                     return ( t3
                                            , s3 <> s2 <> s1
                                            , subst (s3 <> s2) c1 `union` c3
                                            )
 
-  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- cfa e1 $ env
+  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- w e1 $ env
 
                                               a_x <- fresh
                                               a_y <- fresh
@@ -345,8 +327,8 @@ cfa exp env = case exp of
 
                                               s2 <- t1 `u` TSum b_0 nm a_x a_y
 
-                                              (tx, s3, c3) <- cfa ex . (x ~> a_x) . subst (s2 <> s1) $ env
-                                              (ty, s4, c4) <- cfa ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
+                                              (tx, s3, c3) <- w ex . (x ~> a_x) . subst (s2 <> s1) $ env
+                                              (ty, s4, c4) <- w ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
 
                                               s5 <- tx `u` ty
 
@@ -363,11 +345,11 @@ cfa exp env = case exp of
                     ry <- fresh
                     by <- fresh
 
-                    (t1, s1, c1) <- cfa x $ env
+                    (t1, s1, c1) <- w x $ env
                     s2 <- t1 `u` TInt rx bx
 
 
-                    (t3, s3, c3) <- cfa y . subst (s2 <> s1) $ env
+                    (t3, s3, c3) <- w y . subst (s2 <> s1) $ env
                     s4 <- t3 `u` TInt ry by
 
                     rz <- fresh
@@ -387,30 +369,47 @@ cfa exp env = case exp of
                              subst  s4                    c3
                            )
 
--- * Algorithm W for Type Inference
+-- * Fresh Names
 
--- |Runs algorithm W on a list of declarations, making each previous
---  declaration an available expression in the next.
-analyse :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
-analyse ds =
-  let addDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
-      addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- cfa e $ env
+-- |Provides an infinite stream of names to things in the @Analysis@ monad,
+--  reducing it to just an @Either@ value containing perhaps a TypeError.
+withFreshVars :: Analysis a -> Either TypeError a
+withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
+  where
+  freshAVars = fmap show [0..]
+  freshTVars = letters ++ numbers
+    where
+    letters = fmap (: []) ['a'..'z']
+    numbers = fmap (('t' :) . show) [0..]
 
-                                        let s2 = (M.empty, snd s1)
+-- |Refreshes all entries in a type environment.
+refreshAll :: Either TypeError (Env, Prog, Set Constraint) -> Either TypeError (Env, Prog, Set Constraint)
+refreshAll env = do (env, p, c) <- env;
+                    m <- mapM (withFreshVars . refresh) $ fst env
+                    return ((m, snd env), p, c)
 
-                                        return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
-                                               , subst s1 c0 `union` c1
-                                               )
+-- |Replaces every type variable with a fresh one.
+refresh :: Type -> Analysis Type
+refresh t1 = do subs <- forM (ftv t1) $ \a ->
+                          do b <- fresh :: Analysis Type
+                             return $ singleton (a, b)
+                return $ subst (mconcat subs) t1
 
+class Fresh t where
+  fresh :: Analysis t
 
-  in refreshAll . withFreshVars $ do (env, lib) <- prelude
+instance Fresh Type where
+  fresh = fmap TVar $ lift (lift supply)
 
-                                     let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
+instance Fresh Flow where
+  fresh = fmap FVar $ lift supply
 
-                                     (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
+instance Fresh Scale where
+  fresh = fmap SVar $ lift supply
 
-                                     return (env, Prog $  (labeledLib ++ labeledDecls), c0)
-
+instance Fresh Base where
+  fresh = fmap BVar $ lift supply
+                                     
 -- * Constraints
 
 data Constraint
@@ -428,11 +427,26 @@ baseEquality = S.singleton . BaseConstraint . BaseEquality
 selectBase :: (Base, Base) -> Base -> Set Constraint
 selectBase xy z = S.singleton $ BaseConstraint $ BaseSelection xy z
 
+flowConstraint :: String -> Flow -> Label -> Set Constraint
+flowConstraint nm a l = singleton $ FlowConstraint $ Flow nm a l
+
 preserveBase :: (Base, Base) -> Base -> Set Constraint
 preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z
 
-flowConstraint :: String -> Flow -> Label -> Set Constraint
-flowConstraint nm a l = singleton $ FlowConstraint $ Flow nm a l
+extractFlowConstraints :: Set Constraint -> Set FlowConstraint
+extractFlowConstraints = unionMap findFlows where
+  findFlows (FlowConstraint r)      = S.singleton r
+  findFlows _                       = S.empty
+
+extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
+extractScaleConstraints = unionMap findScales where
+    findScales (ScaleConstraint ss) = S.singleton ss
+    findScales _                    = S.empty
+
+extractBaseConstraints :: Set Constraint -> Set BaseConstraint
+extractBaseConstraints = unionMap findBases where
+  findBases (BaseConstraint bs) = S.singleton bs
+  findBases _                   = S.empty
                     
 -- * Environments
 
@@ -449,21 +463,6 @@ emptyExtendedEnv = ExtendedEnv {
   scaleMap = M.empty,
   baseMap  = M.empty
 }
-
-extractFlowConstraints :: Set Constraint -> Set FlowConstraint
-extractFlowConstraints = unionMap findFlows where
-  findFlows (FlowConstraint r)      = S.singleton r
-  findFlows _                       = S.empty
-
-extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
-extractScaleConstraints = unionMap findScales where
-    findScales (ScaleConstraint ss) = S.singleton ss
-    findScales _                    = S.empty
-
-extractBaseConstraints :: Set Constraint -> Set BaseConstraint
-extractBaseConstraints = unionMap findBases where
-  findBases (BaseConstraint bs) = S.singleton bs
-  findBases _                   = S.empty
                                      
 -- * Substitutions
 
@@ -594,7 +593,6 @@ unifyBase b1 b2 =
          else if preserveTypeSystem
                  then return $ mempty
                  else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
-
 
 -- * Singleton Constructors
 
