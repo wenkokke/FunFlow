@@ -15,7 +15,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List as L (union)
 
--- import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
+--  import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join, foldM)
