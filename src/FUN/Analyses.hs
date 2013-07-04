@@ -435,7 +435,7 @@ analyse ds =
 -- * Constraints
 
 data Constraint
-  = FlowConstraint  String Flow Label
+  = FlowConstraint  FlowConstraint
   | ScaleConstraint ScaleConstraint
   | BaseConstraint  BaseConstraint
     deriving (Eq, Ord, Show)
@@ -453,7 +453,7 @@ preserveBase :: (Base, Base) -> Base -> Set Constraint
 preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z
 
 flowConstraint :: String -> Flow -> Label -> Set Constraint
-flowConstraint nm a l = singleton $ FlowConstraint nm a l
+flowConstraint nm a l = singleton $ FlowConstraint $ Flow nm a l
                     
 -- * Environments
 
@@ -473,7 +473,7 @@ emptyExtendedEnv = ExtendedEnv {
 
 extractFlowConstraints :: Set Constraint -> Set FlowConstraint
 extractFlowConstraints = unionMap findFlows where
-  findFlows (FlowConstraint nm v l) = S.singleton (Flow nm v l)
+  findFlows (FlowConstraint r)      = S.singleton r
   findFlows _                       = S.empty
 
 extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
@@ -505,10 +505,13 @@ instance Subst Env where
   subst m (r, w) = (fmap (subst m) r, w)
 
 instance Subst Constraint where
-  subst m (FlowConstraint nm v r) = FlowConstraint nm (subst m v) r
+  subst m (FlowConstraint r)      = FlowConstraint $ subst m r
   subst m (ScaleConstraint ss)    = ScaleConstraint $ subst m ss
   subst m (BaseConstraint ss)     = BaseConstraint $ subst m ss
 
+instance Subst FlowConstraint where
+  subst m (Flow nm v l) = Flow nm (subst m v) l
+  
 instance Subst ScaleConstraint where
   subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
 
