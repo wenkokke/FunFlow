@@ -171,7 +171,7 @@ analyseAll ds =
 
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
                                      
-                                     let ss    = solveScaleConstraints . extractScaleConstraints $ c0
+                                     let ss    = solveScales . extractScaleConstraints $ c0
                                      let ssEnv = traceShow ss (subst ss env)
                                      
                                      return (ssEnv, Prog $ (labeledLib ++ labeledDecls), c0)

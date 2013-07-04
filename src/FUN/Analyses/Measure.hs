@@ -11,6 +11,9 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
+import qualified Data.Foldable as F
+
+import Text.Printf (printf)
 
 type SVar = String
 type SCon = String
@@ -73,19 +76,37 @@ instance Show BaseConstraint where
 
 -- * Constraint Solving
 
-solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints = S.foldr (<>) mempty . S.map solveScaleConstraint where
-  solveScaleConstraint (ScaleEquality cs) = solveVars cs
-
-solveVars :: Set Scale -> SSubst
-solveVars = mkSSubst . getSVars . S.toList where
-  mkSSubst :: [SVar] -> SSubst
-  mkSSubst (a:bs) = foldr (\b m -> m <> singleton (b,SVar a)) mempty bs
+solveScales :: Set ScaleConstraint -> SSubst
+solveScales = F.foldMap solveOne where
+  solveOne (ScaleEquality cs) = solveCons cs
+  
+  solveCons :: Set Scale -> SSubst
+  solveCons cs = foldr (\v m -> m <> singleton (v,single cons)) mempty vars
+    where
+    list = S.toList cs   :: [Scale]
+    cons = getSCons list :: [SCon]
+    vars = getSVars list :: [SVar]
+    single [     ] = SVar (head vars)
+    single [  x  ] = SCon x
+    single (x:y:_) = error (printf "cannot unify %s with %s" (show x) (show y))
+    
+  getSCons :: [Scale] -> [SCon]
+  getSCons = map getSCon . filter isSCon where
+    isSCon  (SCon _) = True
+    isSCon        _  = False
+    getSCon (SCon v) = v
+  
+  solveVars :: Set Scale -> SSubst
+  solveVars = mkSSubst . getSVars . S.toList where
+    mkSSubst :: [SVar] -> SSubst
+    mkSSubst (a:bs) = foldr (\b m -> m <> singleton (b,SVar a)) mempty bs
+  
   getSVars :: [Scale] -> [SVar]
   getSVars = map getSVar . filter isSVar where
     isSVar  (SVar _) = True
     isSVar        _  = False
     getSVar (SVar v) = v
+  
 
 solveBaseConstraints :: Set BaseConstraint -> BSubst
 solveBaseConstraints cs = mempty
