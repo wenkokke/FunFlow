@@ -9,7 +9,7 @@ import FUN.Base     -- ^ abstract syntax tree
 import FUN.Parsing  -- ^ parser
 import FUN.Labeling -- ^ labeling
 import FUN.Analyses 
-  ( analyseAll, prelude, TypeError, Env, Constraint, showType
+  ( analyseAll, prelude, TypeError, Env, Constraint, showType, getPrimary, getExtended
   , extractFlowConstraints, extractScaleConstraints, extractBaseConstraints
   , TVar (..), Type (..)
   )
@@ -43,7 +43,7 @@ parseExpr = runParser "stdin" pExpr
 
 printProgram :: Prog -> Env -> String
 printProgram (Prog p) env = 
-  let funcType (Decl nm e) = case M.lookup nm (fst env) of
+  let funcType (Decl nm e) = case M.lookup nm (getPrimary env) of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
                                Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
       funcBody = showDecl annotations
