@@ -152,10 +152,10 @@ mconcat = foldr (<>) mempty
 
 -- |Runs Algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
-analyse :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
-analyse ds =
+analyseAll :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
+analyseAll ds =
   let addDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
-      addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- w e $ env
+      addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- analyse e $ env
 
                                         let s2 = (M.empty, snd s1)
 
@@ -172,8 +172,8 @@ analyse ds =
                                      return (env, Prog $  (labeledLib ++ labeledDecls), c0)
 
 -- |Runs the Algorithm W inference for types, control flow and measures.
-w :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
-w exp env = case exp of
+analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
+analyse exp env = case exp of
   Lit l           -> return ( typeOf l
                             , mempty
                             , empty
@@ -189,7 +189,7 @@ w exp env = case exp of
   Abs pi x e      -> do a_x <- fresh
                         b_0 <- fresh
 
-                        (t0, s0, c0) <- w e . (x ~> a_x) $ env
+                        (t0, s0, c0) <- analyse e . (x ~> a_x) $ env
 
                         return ( TArr b_0 (subst s0 a_x) t0
                                , s0
@@ -202,7 +202,7 @@ w exp env = case exp of
                         a_0 <- fresh
                         b_0 <- fresh
 
-                        (t0, s0, c0) <- w e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
+                        (t0, s0, c0) <- analyse e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
 
                         s1 <- t0 `u` subst s0 a_0
 
@@ -214,8 +214,8 @@ w exp env = case exp of
                                )
 
 
-  App f e         -> do (t1, s1, c1) <- w f $ env
-                        (t2, s2, c2) <- w e . subst s1 $ env
+  App f e         -> do (t1, s1, c1) <- analyse f $ env
+                        (t2, s2, c2) <- analyse e . subst s1 $ env
 
                         a <- fresh;
                         b <- fresh
@@ -228,8 +228,8 @@ w exp env = case exp of
                                  subst  s3        c2
                                )
 
-  Let x e1 e2     -> do (t1, s1, c1) <- w e1 $ env;
-                        (t2, s2, c2) <- w e2 . (x ~> t1) . subst s1 $ env
+  Let x e1 e2     -> do (t1, s1, c1) <- analyse e1 $ env;
+                        (t2, s2, c2) <- analyse e2 . (x ~> t1) . subst s1 $ env
 
                         return ( t2
                                , s2 <> s1
@@ -239,9 +239,9 @@ w exp env = case exp of
 
   -- * adding if-then-else constructs
 
-  ITE b e1 e2     -> do (t0, s0, c0) <- w b $ env;
-                        (t1, s1, c1) <- w e1 . subst s0 $ env
-                        (t2, s2, c2) <- w e2 . subst (s1 <> s0) $ env
+  ITE b e1 e2     -> do (t0, s0, c0) <- analyse b $ env;
+                        (t1, s1, c1) <- analyse e1 . subst s0 $ env
+                        (t2, s2, c2) <- analyse e2 . subst (s1 <> s0) $ env
 
                         s3 <- subst (s2 <> s1) t0 `u` TBool
                         s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
@@ -260,8 +260,8 @@ w exp env = case exp of
                                       , flowConstraint nm b_0 pi
                                       )
   -- * adding product types
-  Con pi nm (Prod x y)   -> do (t1, s1, c1) <- w x $ env
-                               (t2, s2, c2) <- w y . subst s1 $ env
+  Con pi nm (Prod x y)   -> do (t1, s1, c1) <- analyse x $ env
+                               (t2, s2, c2) <- analyse y . subst s1 $ env
 
                                b_0 <- fresh
 
@@ -271,7 +271,7 @@ w exp env = case exp of
                                                  c1 `union` flowConstraint nm b_0 pi
                                       )
   -- * adding sum types
-  Con pi nm (Sum L t)   -> do (t1, s1, c1) <- w t $ env
+  Con pi nm (Sum L t)   -> do (t1, s1, c1) <- analyse t $ env
                               t2 <- fresh
 
                               b_0 <- fresh
@@ -280,7 +280,7 @@ w exp env = case exp of
                                       , s1
                                       , c1 `union` flowConstraint (nm ++ ".Left") b_0 pi
                                       )
-  Con pi nm (Sum R t)   -> do (t2, s1, c1) <- w t $ env
+  Con pi nm (Sum R t)   -> do (t2, s1, c1) <- analyse t $ env
                               t1 <- fresh
 
                               b_0 <- fresh
@@ -290,20 +290,20 @@ w exp env = case exp of
                                       , c1 `union` flowConstraint (nm ++ ".Right") b_0 pi
                                       )
 
-  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- w e1 $ env
+  Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- analyse e1 $ env
 
                                   b_0 <- fresh
 
                                   s2 <- t1 `u` TUnit b_0 nm
 
-                                  (t3, s3, c3) <- w e2 . subst (s2 <> s1) $ env
+                                  (t3, s3, c3) <- analyse e2 . subst (s2 <> s1) $ env
 
                                   return ( t3
                                          , s3 <> s2 <> s1
                                          , subst (s3 <> s2) c1 `union` c3
                                          )
 
-  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- w e1 $ env
+  Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- analyse e1 $ env
 
                                     a_x <- fresh
                                     a_y <- fresh
@@ -311,14 +311,14 @@ w exp env = case exp of
                                     b_0 <- fresh
 
                                     s2 <- t1 `u` TProd b_0 nm a_x a_y
-                                    (t3, s3, c3) <- w e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
+                                    (t3, s3, c3) <- analyse e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
 
                                     return ( t3
                                            , s3 <> s2 <> s1
                                            , subst (s3 <> s2) c1 `union` c3
                                            )
 
-  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- w e1 $ env
+  Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- analyse e1 $ env
 
                                               a_x <- fresh
                                               a_y <- fresh
@@ -327,8 +327,8 @@ w exp env = case exp of
 
                                               s2 <- t1 `u` TSum b_0 nm a_x a_y
 
-                                              (tx, s3, c3) <- w ex . (x ~> a_x) . subst (s2 <> s1) $ env
-                                              (ty, s4, c4) <- w ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
+                                              (tx, s3, c3) <- analyse ex . (x ~> a_x) . subst (s2 <> s1) $ env
+                                              (ty, s4, c4) <- analyse ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
 
                                               s5 <- tx `u` ty
 
@@ -345,11 +345,11 @@ w exp env = case exp of
                     ry <- fresh
                     by <- fresh
 
-                    (t1, s1, c1) <- w x $ env
+                    (t1, s1, c1) <- analyse x $ env
                     s2 <- t1 `u` TInt rx bx
 
 
-                    (t3, s3, c3) <- w y . subst (s2 <> s1) $ env
+                    (t3, s3, c3) <- analyse y . subst (s2 <> s1) $ env
                     s4 <- t3 `u` TInt ry by
 
                     rz <- fresh

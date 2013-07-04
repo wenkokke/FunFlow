@@ -9,7 +9,7 @@ import FUN.Base     -- ^ abstract syntax tree
 import FUN.Parsing  -- ^ parser
 import FUN.Labeling -- ^ labeling
 import FUN.Analyses 
-  ( analyse, prelude, TypeError, Env, Constraint, showType
+  ( analyseAll, prelude, TypeError, Env, Constraint, showType
   , extractFlowConstraints, extractScaleConstraints, extractBaseConstraints
   , TVar (..), Type (..)
   )
@@ -75,7 +75,7 @@ main =
                          ++ scaleInfo     ++ "\n\n"
                          ++ baseInfo     ++ "\n\n"
       env :: Either TypeError (Env, Prog, Set Constraint)
-      env = analyse prog
+      env = analyseAll prog
   in either print (putStrLn . put) env
         
 exCategory = fmap parseDecl $
