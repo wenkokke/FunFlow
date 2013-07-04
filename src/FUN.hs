@@ -2,6 +2,7 @@ module FUN
   ( module FUN.Base
   , module FUN.Parsing
   , module FUN.Analyses
+  , main
   ) where
 
 import FUN.Base                         -- ^ abstract syntax tree
@@ -9,10 +10,11 @@ import FUN.Parsing                      -- ^ parser
 import FUN.Labeling                     -- ^ labeling
 import FUN.Analyses 
   ( analyse, prelude, TypeError, Env, Constraint, showType
-  , printFlowInformation,  solveFlowConstraints
-  , extractScaleConstraints, extractBaseConstraints
+  , extractFlowConstraints, extractScaleConstraints, extractBaseConstraints
   , TVar (..), Type (..)
   )
+import FUN.Analyses.Flow
+  ( printFlowInformation, solveFlowConstraints )
 import FUN.Analyses.Scales
   ( printScaleInformation, solveScaleConstraints
   , printBaseInformation,  solveBaseConstraints )
@@ -60,9 +62,12 @@ main =
         
       put :: (Env, Prog, Set Constraint) -> String
       put (m, p, w) = let programInfo = "program = " ++ printProgram p m
-                          flowInfo  = "control flow = " ++ (printFlowInformation . solveFlowConstraints $ w)
-                          scaleInfo  = "scale constraints = " ++ (printScaleInformation . extractScaleConstraints $ w)
-                          baseInfo  = "base constraints = " ++ (printBaseInformation . extractBaseConstraints $ w)
+                          flowInfo  = "control flow = "
+                            ++ (printFlowInformation . solveFlowConstraints . extractFlowConstraints $ w)
+                          scaleInfo  = "scale constraints = "
+                            ++ (printScaleInformation . extractScaleConstraints $ w)
+                          baseInfo  = "base constraints = "
+                            ++ (printBaseInformation . extractBaseConstraints $ w)
                         
                       in    programInfo ++ "\n\n"
                          ++ flowInfo     ++ "\n\n"

@@ -2,6 +2,7 @@ module FUN.Base where
 
 import Prelude hiding (abs)
 import Text.Printf (printf)
+import FUN.Analyses.Flow (Label)
 import FUN.Analyses.Scales (Scale (SNil), Base (BNil))
 
 -- * Abstract syntax tree for the FUN language
@@ -48,7 +49,6 @@ data Expr
 data LR = L | R
   deriving (Eq)
 
-  
 data Con
   = Unit
   | Prod Expr Expr
@@ -62,10 +62,7 @@ data Des
   deriving (Eq)
 
 type Name
-  = String
-  
-type Label
-  = String
+  = String 
   
 noLabel :: Label
 noLabel = ""
@@ -88,13 +85,12 @@ des e nm f = Des nm e (f nm)
 ununit :: Expr -> (Name -> Des)
 ununit e nm = UnUnit e 
 
+-- |Constructs a product constructor.
+prod = Prod
+
 -- |Constructs a product destructor.
 unprod :: Name -> Name -> Expr -> (Name -> Des)
 unprod x y e _ = UnProd x y e
-
--- |Constructs a sum destructor.
-unsum :: Name -> Expr -> Name -> Name -> Expr -> (Name -> Des)
-unsum xl el nr xr er nl | nl == nr = UnSum (xl, el) (xr, er)
 
 -- |Construcs a left sum constructor.
 suml :: Expr -> Con
@@ -103,6 +99,10 @@ suml e = Sum L e
 -- |Construcs a left sum constructor.
 sumr :: Expr -> Con
 sumr e = Sum R e
+
+-- |Constructs a sum destructor.
+unsum :: Name -> Expr -> Name -> Name -> Expr -> (Name -> Des)
+unsum xl el nr xr er nl | nl == nr = UnSum (xl, el) (xr, er)
 
 -- |Constructs a "list" out of a list of expressions.
 list :: [Expr] -> Expr
