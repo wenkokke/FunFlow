@@ -1,14 +1,13 @@
 module FUN
   ( module FUN.Base
   , module FUN.Parsing
-  , module FUN.CFA
+  , module FUN.Analyses
   ) where
 
 import FUN.Base                         -- ^ abstract syntax tree
 import FUN.Parsing                      -- ^ parser
 import FUN.Labeling                     -- ^ labeling
-import FUN.W (runW)                     -- ^ type inference
-import FUN.CFA 
+import FUN.Analyses 
   ( runCFA, prelude, TypeError, Env, Constraint, showType
   , printFlowInformation,  solveFlowConstraints
   , printScaleInformation, solveScaleConstraints, extractScaleConstraints
