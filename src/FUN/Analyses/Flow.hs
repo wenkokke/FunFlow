@@ -12,8 +12,7 @@ import qualified Data.Map as M
 import Data.Set (Set,union)
 import qualified Data.Set as S
 
--- * Flow
-
+-- * Flow Variables
 type FVar = String
 
 -- | Program points.

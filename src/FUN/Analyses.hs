@@ -10,6 +10,8 @@ import FUN.Analyses.Utils
 
 import Prelude hiding (mapM)
 
+import Debug.Trace (traceShow)
+
 import Data.Monoid hiding ( Sum )
 
 import Control.Applicative ((<$>))
@@ -168,8 +170,11 @@ analyseAll ds =
                                      let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
 
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
-
-                                     return (env, Prog $  (labeledLib ++ labeledDecls), c0)
+                                     
+                                     let ss    = solveScaleConstraints . extractScaleConstraints $ c0
+                                     let ssEnv = traceShow ss (subst ss env)
+                                     
+                                     return (ssEnv, Prog $ (labeledLib ++ labeledDecls), c0)
 
 -- |Runs the Algorithm W inference for types, control flow and measures.
 analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
@@ -418,10 +423,10 @@ data Constraint
   | BaseConstraint  BaseConstraint
     deriving (Eq, Ord, Show)
 
-scaleEquality :: [Scale] -> Set Constraint
+scaleEquality :: Set Scale -> Set Constraint
 scaleEquality = S.singleton . ScaleConstraint . ScaleEquality
 
-baseEquality :: [Base] -> Set Constraint
+baseEquality :: Set Base -> Set Constraint
 baseEquality = S.singleton . BaseConstraint . BaseEquality
 
 selectBase :: (Base, Base) -> Base -> Set Constraint
@@ -472,9 +477,9 @@ emptyExtendedEnv = ExtendedEnv {
 -- |Substitutes a type for a type variable in a type.
 instance Subst Env Type where
   subst m TBool = TBool
-  subst m r@(TInt s b)     = TInt (subst m s) (subst m b)
+  subst m r@(TInt s b)     = TInt  (subst m s) (subst m b)
   subst m v@(TVar n)       = M.findWithDefault v n (getPrimary m)
-  subst m (TArr  v    a b) = TArr (subst m v) (subst m a) (subst m b)
+  subst m (TArr  v    a b) = TArr  (subst m v) (subst m a) (subst m b)
   subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
   subst m (TUnit v nm)     = TUnit (subst m v) nm
@@ -483,9 +488,9 @@ instance Subst Env Env where
   subst m (Env r w) = Env (fmap (subst m) r) w
 
 instance Subst Env Constraint where
-  subst m (FlowConstraint r)      = FlowConstraint $ subst m r
-  subst m (ScaleConstraint ss)    = ScaleConstraint $ subst m ss
-  subst m (BaseConstraint ss)     = BaseConstraint $ subst m ss
+  subst m (FlowConstraint r)   = FlowConstraint $ subst m r
+  subst m (ScaleConstraint ss) = ScaleConstraint $ subst m ss
+  subst m (BaseConstraint ss)  = BaseConstraint $ subst m ss
   
 instance Subst Env Flow where
   subst e = subst (flowMap $ getExtended e)
@@ -495,6 +500,12 @@ instance Subst Env Scale where
 
 instance Subst Env Base where
   subst e = subst (baseMap $ getExtended e)
+  
+instance Subst SSubst Env where
+  subst s (Env p e) = Env (subst (injectSSubst s mempty) p) e
+  
+injectSSubst :: SSubst -> Env -> Env
+injectSSubst (SSubst m) e = Env (getPrimary e) ((getExtended e) { scaleMap = m })
 
 -- * Unifications
 

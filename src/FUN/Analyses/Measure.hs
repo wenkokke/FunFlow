@@ -47,21 +47,21 @@ instance Show Base where
 -- * Constraints
   
 data ScaleConstraint
-  = ScaleEquality [Scale]
+  = ScaleEquality (Set Scale)
   deriving (Eq, Ord)
      
 instance Show ScaleConstraint where
-  show (ScaleEquality ss) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ ss)
+  show (ScaleEquality ss) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . map show . S.toList $ ss)
   
 data BaseConstraint 
-  = BaseEquality [Base] 
+  = BaseEquality (Set Base)
   | BasePreservation (Base, Base) Base
   | BaseSelection (Base, Base) Base
   deriving (Eq, Ord)
     
 instance Show BaseConstraint where
   show (BaseEquality bs)
-    = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ bs) 
+    = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . map show . S.toList $ bs) 
   show (BasePreservation (x, y) z)
     = "preservation: if " ++ show y ++ " = none then " ++ show x 
                           ++ "; if " ++ show x ++ " = " ++ show y ++ "then none" 
@@ -74,10 +74,11 @@ instance Show BaseConstraint where
 -- * Constraint Solving
 
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints cs = mempty
+solveScaleConstraints = S.foldr (<>) mempty . S.map solveScaleConstraint where
+  solveScaleConstraint (ScaleEquality cs) = solveVars cs
 
-solveVars :: [Scale] -> SSubst
-solveVars = mkSSubst . getSVars where
+solveVars :: Set Scale -> SSubst
+solveVars = mkSSubst . getSVars . S.toList where
   mkSSubst :: [SVar] -> SSubst
   mkSSubst (a:bs) = foldr (\b m -> m <> singleton (b,SVar a)) mempty bs
   getSVars :: [Scale] -> [SVar]
@@ -112,9 +113,11 @@ instance Subst (Map SVar Scale) Scale where
   subst m v@_ = v
   
 instance (Subst e Scale) => Subst e ScaleConstraint where
-  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
+  subst m (ScaleEquality ss) = ScaleEquality $ subst m ss
 
-newtype SSubst = SSubst { getSSubst :: Map SVar Scale }
+newtype SSubst = SSubst
+  { getSSubst :: Map SVar Scale
+  } deriving (Eq, Ord, Show)
 
 instance Subst SSubst Scale where
   subst (SSubst m) = subst m
@@ -136,11 +139,13 @@ instance Subst (Map BVar Base) Base where
   subst m v@_ = v
   
 instance (Subst e Base) => Subst e BaseConstraint where
-  subst m (BaseEquality ss)           = BaseEquality $ map (subst m) ss
+  subst m (BaseEquality ss)           = BaseEquality $ subst m ss
   subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
   subst m (BaseSelection (x, y) z)    = BaseSelection (subst m x, subst m y) (subst m z)
 
-newtype BSubst = BSubst { getBSubst :: Map BVar Base }
+newtype BSubst = BSubst
+  { getBSubst :: Map BVar Base
+  } deriving (Eq, Ord, Show)
 
 instance Subst BSubst Base where
   subst (BSubst m) = subst m
