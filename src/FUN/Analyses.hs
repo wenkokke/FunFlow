@@ -496,9 +496,6 @@ instance Subst Env Scale where
 instance Subst Env Base where
   subst e = subst (baseMap $ getExtended e)
 
-instance (Subst e a, Ord a) => Subst e (Set a) where
-  subst m = S.map (subst m)
-
 -- * Unifications
 
 -- |Unification as per Robinson's unification algorithm.
@@ -580,15 +577,6 @@ unifyBase b1 b2 =
                  else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
 
 -- * Singleton Constructors
-
-class Singleton w k where
-  singleton :: k -> w
-
-instance Singleton (Map k a) (k, a) where
-  singleton = uncurry M.singleton
-
-instance Singleton (Set k) k where
-  singleton = S.singleton
 
 instance Singleton Env (TVar, Type) where
   singleton (k, a) = Env (M.singleton k a) emptyExtendedEnv

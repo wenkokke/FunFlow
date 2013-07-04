@@ -73,18 +73,15 @@ instance Show BaseConstraint where
 
 -- * Constraint Solving
 
-type SSubst = Map SVar Scale
-type BSubst = Map BVar Base
-
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
 solveScaleConstraints cs = mempty
 
-solve1 :: [Scale] -> SSubst
-solve1 = ssubst . svars where
-  ssubst :: [SVar] -> SSubst
-  ssubst (a:bs) = foldr (\b m -> m <> M.singleton b (SVar a)) M.empty bs
-  svars :: [Scale] -> [SVar]
-  svars = map getSVar . filter isSVar where
+solveVars :: [Scale] -> SSubst
+solveVars = mkSSubst . getSVars where
+  mkSSubst :: [SVar] -> SSubst
+  mkSSubst (a:bs) = foldr (\b m -> m <> singleton (b,SVar a)) mempty bs
+  getSVars :: [Scale] -> [SVar]
+  getSVars = map getSVar . filter isSVar where
     isSVar  (SVar _) = True
     isSVar        _  = False
     getSVar (SVar v) = v
@@ -106,22 +103,54 @@ printBaseInformation m =
       suffix = "}"
   in prefix ++ content ++ suffix
   
--- * Substitutions
+-- * Scale Substitutions
   
 instance Subst (Map SVar Scale) Scale where
   subst m v@(SVar n)   = M.findWithDefault v n m
   subst m   (SMul a b) = SMul (subst m a) (subst m b)
   subst m   (SInv a)   = SInv (subst m a)
   subst m v@_ = v
+  
+instance (Subst e Scale) => Subst e ScaleConstraint where
+  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
+
+newtype SSubst = SSubst { getSSubst :: Map SVar Scale }
+
+instance Subst SSubst Scale where
+  subst (SSubst m) = subst m
+  
+instance Subst SSubst SSubst where
+  subst m (SSubst s) = SSubst (subst m s)
+  
+instance Monoid SSubst where
+  mempty      = SSubst mempty
+  mappend s t = SSubst (getSSubst (subst s t) <> getSSubst (subst t s))
+  
+instance Singleton SSubst (SVar,Scale) where
+  singleton (k,a) = SSubst (M.singleton k a)
+  
+-- * Base Substitutions
 
 instance Subst (Map BVar Base) Base where
   subst m v@(BVar n) = M.findWithDefault v n m
   subst m v@_ = v
   
-instance (Subst e Scale) => Subst e ScaleConstraint where
-  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
-  
 instance (Subst e Base) => Subst e BaseConstraint where
   subst m (BaseEquality ss)           = BaseEquality $ map (subst m) ss
   subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
   subst m (BaseSelection (x, y) z)    = BaseSelection (subst m x, subst m y) (subst m z)
+
+newtype BSubst = BSubst { getBSubst :: Map BVar Base }
+
+instance Subst BSubst Base where
+  subst (BSubst m) = subst m
+
+instance Subst BSubst BSubst where
+  subst m (BSubst s) = BSubst (subst m s)
+  
+instance Monoid BSubst where
+  mempty      = BSubst mempty
+  mappend s t = BSubst (getBSubst (subst s t) <> getBSubst (subst t s))
+  
+instance Singleton BSubst (BVar,Base) where
+  singleton (k,a) = BSubst (M.singleton k a)
