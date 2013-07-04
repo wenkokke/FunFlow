@@ -46,7 +46,8 @@ prelude = if False then return (mempty, []) else
 
 -- * Type definitions
 
-type TVar = Name -- Type Variable
+-- |Type variables
+type TVar = String
 
 data Type
   = TVar  TVar
@@ -102,6 +103,11 @@ ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TUnit _ _)     = [ ]
 
+-- |Types of primitives.
+typeOf :: Lit -> Type
+typeOf (Bool _) = TBool
+typeOf (Integer s b _) = TInt s b
+
 -- |Representation for possible errors in algorithm W.
 data TypeError
   = CannotDestruct  Type      -- ^ thrown when attempting to destruct a non-product
@@ -127,10 +133,6 @@ instance Show TypeError where
   show (MeasureError     s) = "Unit of Measure Error: " ++ s
 
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
-
-typeOf :: Lit -> Type
-typeOf (Bool    _) = TBool
-typeOf (Integer s b _) = TInt s b
 
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(Env m w) -> Env (M.insert x t m) w
