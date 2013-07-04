@@ -141,12 +141,11 @@ exSum = fmap parseDecl $
   ]
 
 exFault = fmap parseDecl $
-  [ "idX x = x"
-  , "idY y = y"
+  [ "idX x y = x"
   , "compose f g x = f (g x)"
   
-  , "mapFst f p = case p of Pair (x, y) -> Pair (f x, y)"
-  , "mapPair f = compose (mapFst f) (mapFst f)"
+  , "mapFst f p = case p of Unit () -> f ( Unit () )"
+  , "mapPair f = compose (mapFst f) f"
   ]
   
 exUnion = concat $
