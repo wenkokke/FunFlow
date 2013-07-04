@@ -3,8 +3,8 @@
 module FUN.Analyses where
 
 import FUN.Base
-import FUN.Scales
 import FUN.Labeling
+import FUN.Analyses.Scales
 
 import Text.Printf (printf)
 
@@ -17,7 +17,6 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List as L (union)
 
--- import Data.Monoid hiding ((<>), mempty, mconcat Sum (..) )
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join, foldM)
@@ -31,7 +30,6 @@ import Control.Monad.Trans (lift)
 
 import Data.Set ( Set, empty, union )
 import qualified Data.Set as Set
-
 
 prelude :: Analysis (Env, [Decl])
 prelude = if False then return (mempty, []) else
@@ -265,8 +263,11 @@ instance Show TypeError where
 occurs :: TVar -> Type -> Bool
 occurs n t = n `elem` (ftv t)
 
-data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar Flow, scaleMap :: Map SVar Scale, baseMap :: Map BVar Base }   
-     deriving Show 
+data ExtendedEnv = ExtendedEnv
+  { cfaMap   :: Map FVar Flow
+  , scaleMap :: Map SVar Scale
+  , baseMap  :: Map BVar Base
+  } deriving Show
 type Env = (Map TVar Type, ExtendedEnv)
 
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
@@ -368,6 +369,7 @@ x ~> t = \(m, w) -> (M.insert x t m, w)
                                baseMap  = baseMap  a2 `M.union` (subst m <$> baseMap  a1)   
                              }
                            )
+
 mempty :: Env
 mempty = (M.empty, emptyExtendedEnv)
 
@@ -377,7 +379,6 @@ mconcat = foldr (<>) mempty
 constraint :: String -> Flow -> Label -> Set Constraint
 constraint nm a l = singleton $ FlowConstraint nm a l                               
 
-    
 -- |Algorithm W for type inference.
 cfa :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
 cfa exp env = case exp of
@@ -563,9 +564,9 @@ cfa exp env = case exp of
                     bz <- fresh
                     
                     let c0 = case op of
-                          Add -> scaleEquality [rx, ry, rz]                  `union` selectBase   (bx, by) bz                                    
-                          Sub -> scaleEquality [rx, ry, rz]                  `union` preserveBase (bx, by) bz                                                         
-                          Mul -> scaleEquality [rz, (SMul rx ry)]          `union` baseEquality [bx, by, bz, BNil]
+                          Add -> scaleEquality [rx, ry, rz]            `union` selectBase   (bx, by) bz                                    
+                          Sub -> scaleEquality [rx, ry, rz]            `union` preserveBase (bx, by) bz                                                         
+                          Mul -> scaleEquality [rz, (SMul rx ry)]      `union` baseEquality [bx, by, bz, BNil]
                           Div -> scaleEquality [rz, SMul rx (SInv ry)] `union` baseEquality [bx, by, bz, BNil]      
                                                            
 
@@ -576,13 +577,12 @@ cfa exp env = case exp of
                              subst  s4                    c3       
                            )
   
-data Constraint 
+data Constraint
   = FlowConstraint String Flow Label
   | ScaleConstraint ScaleConstraint
   | BaseConstraint BaseConstraint
   deriving (Eq, Ord, Show)
 
-   
 scaleEquality :: [Scale] -> Set Constraint
 scaleEquality = S.singleton . ScaleConstraint . ScaleEquality
 
@@ -593,7 +593,7 @@ selectBase :: (Base, Base) -> Base -> Set Constraint
 selectBase xy z = S.singleton $ BaseConstraint $ BaseSelection xy z 
 
 preserveBase :: (Base, Base) -> Base -> Set Constraint
-preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z 
+preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z
 
 solveFlowConstraints :: Set Constraint -> Map FVar (String, Set Label)
 solveFlowConstraints = 
@@ -610,13 +610,6 @@ solveFlowConstraints =
           FVar r -> [M.singleton r (nm, S.singleton l)]
       extractFlowConstraint _ = []
   in M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . concatMap extractFlowConstraint . S.toList
-     
-data ScaleConstraint
-  = ScaleEquality [Scale]
-    deriving (Eq, Ord)
-     
-instance Show ScaleConstraint where
-  show (ScaleEquality ss) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ ss) 
   
 unionMap :: (Ord a, Ord b) => (a -> Set b) -> Set a -> Set b
 unionMap f = S.unions . map f . S.toList
@@ -625,33 +618,15 @@ extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
 extractScaleConstraints = unionMap findScales where
     findScales (ScaleConstraint ss) = S.singleton ss
     findScales _                    = S.empty
+    
+extractBaseConstraints :: Set Constraint -> Set BaseConstraint
+extractBaseConstraints = unionMap findBases where
+  findBases (BaseConstraint bs) = S.singleton bs
+  findBases _                   = S.empty
 
 maybeHead :: [a] -> Maybe a
-maybeHead [] = Nothing
+maybeHead [   ] = Nothing
 maybeHead (x:_) = Just x
-    
-solveScaleConstraints :: Set ScaleConstraint -> Env
-solveScaleConstraints cs = mempty   
-data BaseConstraint 
-  = BaseEquality [Base] 
-  | BasePreservation (Base, Base) Base
-  | BaseSelection (Base, Base) Base
-    deriving (Eq, Ord)
-    
-instance Show BaseConstraint where
-  show (BaseEquality bs) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ bs) 
-  show (BasePreservation (x, y) z) = "preservation: if " ++ show y ++ " = none then " ++ show x 
-                                              ++ "; if " ++ show x ++ " = " ++ show y ++ "then none" 
-                                              ++ "; else undefined"
-  show (BaseSelection (x, y) z) = "selection: if " ++ show y ++ " = none then " ++ show x
-                                        ++ "; if " ++ show x ++ " = none then " ++ show y
-                                        ++ "; else error"
-    
-solveBaseConstraints :: Set Constraint -> [BaseConstraint]
-solveBaseConstraints = concatMap findBases . S.toList where
-  findBases (BaseConstraint bs) = [bs]
-  findBases _                   = [  ]
-
 
 printFlowInformation :: Map FVar (String, Set Label) -> String
 printFlowInformation m = 
@@ -660,22 +635,6 @@ printFlowInformation m =
       content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
-
-printScaleInformation :: Set ScaleConstraint -> String
-printScaleInformation m =
-  let prefix = "{\n"
-      content = S.foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
-      suffix = "}"
-  in prefix ++ content ++ suffix
-
-printBaseInformation :: [BaseConstraint] -> String
-printBaseInformation m = 
-  let prefix = "{\n"
-      content = foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
-      suffix = "}"
-  in prefix ++ content ++ suffix
-
-
    
 -- * Algorithm W for Type Inference
 
@@ -699,7 +658,5 @@ analyse ds =
                                      let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
   
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
-                                     
-                                     let scaleSubst = solveScaleConstraints . extractScaleConstraints $ c0                                      
                           
-                                     return (subst scaleSubst env, Prog $  (labeledLib ++ labeledDecls), c0)
+                                     return (env, Prog $  (labeledLib ++ labeledDecls), c0)

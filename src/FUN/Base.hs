@@ -2,7 +2,7 @@ module FUN.Base where
 
 import Prelude hiding (abs)
 import Text.Printf (printf)
-import FUN.Scales (Scale (SNil), Base (BNil))
+import FUN.Analyses.Scales (Scale (SNil), Base (BNil))
 
 -- * Abstract syntax tree for the FUN language
 

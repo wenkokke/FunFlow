@@ -10,10 +10,12 @@ import FUN.Labeling                     -- ^ labeling
 import FUN.Analyses 
   ( analyse, prelude, TypeError, Env, Constraint, showType
   , printFlowInformation,  solveFlowConstraints
-  , printScaleInformation, solveScaleConstraints, extractScaleConstraints
-  , printBaseInformation,  solveBaseConstraints
+  , extractScaleConstraints, extractBaseConstraints
   , TVar (..), Type (..)
-  ) -- ^ control flow analysis
+  )
+import FUN.Analyses.Scales
+  ( printScaleInformation, solveScaleConstraints
+  , printBaseInformation,  solveBaseConstraints )
 
 import Text.Printf (printf)
 
@@ -60,7 +62,7 @@ main =
       put (m, p, w) = let programInfo = "program = " ++ printProgram p m
                           flowInfo  = "control flow = " ++ (printFlowInformation . solveFlowConstraints $ w)
                           scaleInfo  = "scale constraints = " ++ (printScaleInformation . extractScaleConstraints $ w)
-                          baseInfo  = "base constraints = " ++ (printBaseInformation . solveBaseConstraints $ w)
+                          baseInfo  = "base constraints = " ++ (printBaseInformation . extractBaseConstraints $ w)
                         
                       in    programInfo ++ "\n\n"
                          ++ flowInfo     ++ "\n\n"
