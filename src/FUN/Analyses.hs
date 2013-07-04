@@ -468,11 +468,11 @@ emptyExtendedEnv = ExtendedEnv {
                                      
 -- * Substitutions
 
-class Subst w where
-  subst :: Env -> w -> w
+class Subst e w where
+  subst :: e -> w -> w
 
 -- |Substitutes a type for a type variable in a type.
-instance Subst Type where
+instance Subst Env Type where
   subst m TBool = TBool
   subst m r@(TInt s b)     = TInt (subst m s) (subst m b)
   subst m v@(TVar n)       = M.findWithDefault v n (fst m)
@@ -481,39 +481,39 @@ instance Subst Type where
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
   subst m (TUnit v nm)     = TUnit (subst m v) nm
 
-instance Subst Env where
+instance Subst Env Env where
   subst m (r, w) = (fmap (subst m) r, w)
 
-instance Subst Constraint where
+instance Subst Env Constraint where
   subst m (FlowConstraint r)      = FlowConstraint $ subst m r
   subst m (ScaleConstraint ss)    = ScaleConstraint $ subst m ss
   subst m (BaseConstraint ss)     = BaseConstraint $ subst m ss
 
-instance Subst FlowConstraint where
+instance Subst Env FlowConstraint where
   subst m (Flow nm v l) = Flow nm (subst m v) l
   
-instance Subst ScaleConstraint where
+instance Subst Env ScaleConstraint where
   subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
 
-instance Subst BaseConstraint where
+instance Subst Env BaseConstraint where
   subst m (BaseEquality ss) = BaseEquality $ map (subst m) ss
   subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
   subst m (BaseSelection (x, y) z) = BaseSelection (subst m x, subst m y) (subst m z)
 
-instance Subst Flow where
+instance Subst Env Flow where
   subst m v@(FVar n) = M.findWithDefault v n (flowMap $ snd m)
 
-instance Subst Scale where
+instance Subst Env Scale where
   subst m v@(SVar n) = M.findWithDefault v n (scaleMap $ snd m)
   subst m (SMul a b) = SMul (subst m a) (subst m b)
   subst m (SInv a) = SInv (subst m a)
   subst m v@_ = v
 
-instance Subst Base where
+instance Subst Env Base where
   subst m v@(BVar n) = M.findWithDefault v n (baseMap $ snd m)
   subst m v@_ = v
 
-instance (Subst a, Ord a) => Subst (Set a) where
+instance (Subst e a, Ord a) => Subst e (Set a) where
   subst m = S.map (subst m)
 
 -- * Unifications

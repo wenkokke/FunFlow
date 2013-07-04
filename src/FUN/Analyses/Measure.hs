@@ -34,7 +34,7 @@ instance Show Scale where
   show (SInv a)           = "1/(" ++ show a ++ ")"
 
 instance Show Base where
-  show BNil     = "Unit"
+  show BNil     = "None"
   show (BVar v) = "[" ++ v ++ "]"
   show (BCon c) = c
 
@@ -72,6 +72,16 @@ type BSubst = Map BVar Base
 
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
 solveScaleConstraints cs = mempty
+
+solve1 :: [Scale] -> SSubst
+solve1 = ssubst . svars where
+  ssubst :: [SVar] -> SSubst
+  ssubst (a:bs) = foldr (\b m -> m <> M.singleton b (SVar a)) M.empty bs
+  svars :: [Scale] -> [SVar]
+  svars = map getSVar . filter isSVar where
+    isSVar  (SVar _) = True
+    isSVar        _  = False
+    getSVar (SVar v) = v
 
 solveBaseConstraints :: Set BaseConstraint -> BSubst
 solveBaseConstraints cs = mempty

@@ -14,7 +14,7 @@ type Label
   = String
 
 data Flow 
-  = FVar FVar 
+  = FVar FVar
     deriving (Eq, Ord, Show)
     
 data FlowConstraint
@@ -32,20 +32,11 @@ solveFlowConstraints =
                              else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
       toFEnv (Flow nm (FVar r) l) = M.singleton r (nm, S.singleton l)
   in M.unionsWith (\(nx, vx) (ny, vy) -> (mergeNames nx ny, vx `union` vy) ) . S.toList . S.map toFEnv
-    
-printFlow :: Map FVar (String, Set Label) -> String
-printFlow m = 
-  let prefix = "{\n"
-      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
-      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
-      suffix = "}"
-  in prefix ++ content ++ suffix
-
 
 printFlowInformation :: Map FVar (String, Set Label) -> String
 printFlowInformation m =
   let prefix = "{\n"
-      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
-      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
+      printCon (nm, v) = nm ++ "\t[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]"
+      content = M.foldWithKey (\k a as -> "  {" ++ k ++ "}\t~> " ++ printCon a ++ "\n" ++ as) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
