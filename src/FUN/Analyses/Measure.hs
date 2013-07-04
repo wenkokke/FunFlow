@@ -1,4 +1,8 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Measure where
+
+import FUN.Analyses.Utils
 
 import Data.Monoid
 import Data.Map (Map)
@@ -65,7 +69,7 @@ instance Show BaseConstraint where
                        ++ "; if " ++ show x ++ " = none then " ++ show y
                        ++ "; else error"
 
--- * Constraint solvers
+-- * Constraint Solving
 
 type SSubst = Map SVar Scale
 type BSubst = Map BVar Base
@@ -99,3 +103,15 @@ printBaseInformation m =
       content = S.foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
+  
+-- * Substitutions
+  
+instance Subst (Map SVar Scale) Scale where
+  subst m v@(SVar n)   = M.findWithDefault v n m
+  subst m   (SMul a b) = SMul (subst m a) (subst m b)
+  subst m   (SInv a)   = SInv (subst m a)
+  subst m v@_ = v
+
+instance Subst (Map BVar Base) Base where
+  subst m v@(BVar n) = M.findWithDefault v n m
+  subst m v@_ = v

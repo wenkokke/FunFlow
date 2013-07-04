@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Utils where
 
 import Control.Applicative
@@ -6,6 +8,13 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
+
+-- * Substitutions
+
+class Subst e w where
+  subst :: e -> w -> w
+  
+-- * Utility Functions
 
 ($*) :: Applicative f => Ord a => Map a b -> a -> f b -> f b
 f $* a = \d ->

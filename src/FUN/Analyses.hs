@@ -10,6 +10,8 @@ import FUN.Analyses.Utils
 
 import Prelude hiding (mapM)
 
+import Data.Monoid hiding ( Sum )
+
 import Control.Applicative ((<$>))
 import Control.Monad (join, foldM)
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
@@ -40,7 +42,7 @@ prelude = if False then return (mempty, []) else
   in do ps <- mapM (\(nm, e, f) -> do v <- fresh;
                                       return ( (nm, f v), Decl nm e)) $ predefs;
         let (env, ds) = unzip ps;
-        return ( (M.fromList env, emptyExtendedEnv), ds )
+        return (Env (M.fromList env) emptyExtendedEnv, ds)
 
 -- * Type definitions
 
@@ -133,22 +135,18 @@ instance Show TypeError where
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 (~>) :: TVar -> Type -> Env -> Env
-x ~> t = \(m, w) -> (M.insert x t m, w)
+x ~> t = \(Env m w) -> Env (M.insert x t m) w
 
-(<>) :: Env -> Env -> Env
-(<>) m@(s2, a2) (s1, a1) = ( s2 `M.union` (subst m <$> s1)
-                           , ExtendedEnv {
-                               flowMap  = flowMap  a2 `M.union` (subst m <$> flowMap  a1),
-                               scaleMap = scaleMap a2 `M.union` (subst m <$> scaleMap a1),
-                               baseMap  = baseMap  a2 `M.union` (subst m <$> baseMap  a1)
-                             }
-                           )
 
-mempty :: Env
-mempty = (M.empty, emptyExtendedEnv)
-
-mconcat :: [Env] -> Env
-mconcat = foldr (<>) mempty
+instance Monoid Env where                    
+  m@(Env s2 a2) `mappend` (Env s1 a1) = Env (s2 `M.union` (subst m <$> s1)) $
+                                          ExtendedEnv {
+                                            flowMap  = flowMap  a2 `M.union` (subst m <$> flowMap  a1),
+                                            scaleMap = scaleMap a2 `M.union` (subst m <$> scaleMap a1),
+                                            baseMap  = baseMap  a2 `M.union` (subst m <$> baseMap  a1)
+                                          }
+                                  
+  mempty = Env M.empty emptyExtendedEnv
 
 -- * Algorithm W for Type Inference
 
@@ -159,9 +157,9 @@ analyseAll ds =
   let addDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
       addDecl (env, c0) (Decl x e) = do (t, s1, c1) <- analyse e $ env
 
-                                        let s2 = (M.empty, snd s1)
+                                        let s2 = Env M.empty (getExtended s1)
 
-                                        return ( (M.insert x t . fmap (subst s2) $ fst env, snd env)
+                                        return ( Env (M.insert x t . fmap (subst s2) $ getPrimary env) (getExtended env)
                                                , subst s1 c0 `union` c1
                                                )
 
@@ -181,7 +179,7 @@ analyse exp env = case exp of
                             , empty
                             )
 
-  Var x           -> do v <- (fst env $* x) $ throwError (UnboundVariable x)
+  Var x           -> do v <- (getPrimary env $* x) $ throwError (UnboundVariable x)
 
                         return ( v
                                , mempty
@@ -387,15 +385,15 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
 -- |Refreshes all entries in a type environment.
 refreshAll :: Either TypeError (Env, Prog, Set Constraint) -> Either TypeError (Env, Prog, Set Constraint)
 refreshAll env = do (env, p, c) <- env;
-                    m <- mapM (withFreshVars . refresh) $ fst env
-                    return ((m, snd env), p, c)
+                    m <- mapM (withFreshVars . refresh) $ getPrimary env
+                    return (Env m $ getExtended env, p, c)
 
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> Analysis Type
 refresh t1 = do subs <- forM (ftv t1) $ \a ->
-                          do b <- fresh :: Analysis Type
+                          do b <- (fresh :: Analysis Type)
                              return $ singleton (a, b)
-                return $ subst (mconcat subs) t1
+                return $ subst (mconcat subs :: Env) t1
 
 class Fresh t where
   fresh :: Analysis t
@@ -452,7 +450,7 @@ extractBaseConstraints = unionMap findBases where
                     
 -- * Environments
 
-type Env = (Map TVar Type, ExtendedEnv)
+data Env = Env (Map TVar Type) ExtendedEnv
 
 data ExtendedEnv = ExtendedEnv
   { flowMap  :: Map FVar Flow
@@ -465,24 +463,27 @@ emptyExtendedEnv = ExtendedEnv {
   scaleMap = M.empty,
   baseMap  = M.empty
 }
+
+getPrimary :: Env -> Map TVar Type
+getPrimary (Env a b) = a
+  
+getExtended :: Env -> ExtendedEnv
+getExtended (Env a b) = b
                                      
 -- * Substitutions
-
-class Subst e w where
-  subst :: e -> w -> w
 
 -- |Substitutes a type for a type variable in a type.
 instance Subst Env Type where
   subst m TBool = TBool
   subst m r@(TInt s b)     = TInt (subst m s) (subst m b)
-  subst m v@(TVar n)       = M.findWithDefault v n (fst m)
+  subst m v@(TVar n)       = M.findWithDefault v n (getPrimary m)
   subst m (TArr  v    a b) = TArr (subst m v) (subst m a) (subst m b)
   subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
   subst m (TUnit v nm)     = TUnit (subst m v) nm
 
 instance Subst Env Env where
-  subst m (r, w) = (fmap (subst m) r, w)
+  subst m (Env r w) = Env (fmap (subst m) r) w
 
 instance Subst Env Constraint where
   subst m (FlowConstraint r)      = FlowConstraint $ subst m r
@@ -499,19 +500,15 @@ instance Subst Env BaseConstraint where
   subst m (BaseEquality ss) = BaseEquality $ map (subst m) ss
   subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
   subst m (BaseSelection (x, y) z) = BaseSelection (subst m x, subst m y) (subst m z)
-
+  
 instance Subst Env Flow where
-  subst m v@(FVar n) = M.findWithDefault v n (flowMap $ snd m)
+  subst e = subst (flowMap $ getExtended e)
 
 instance Subst Env Scale where
-  subst m v@(SVar n) = M.findWithDefault v n (scaleMap $ snd m)
-  subst m (SMul a b) = SMul (subst m a) (subst m b)
-  subst m (SInv a) = SInv (subst m a)
-  subst m v@_ = v
+  subst e = subst (scaleMap $ getExtended e)
 
 instance Subst Env Base where
-  subst m v@(BVar n) = M.findWithDefault v n (baseMap $ snd m)
-  subst m v@_ = v
+  subst e = subst (baseMap $ getExtended e)
 
 instance (Subst e a, Ord a) => Subst e (Set a) where
   subst m = S.map (subst m)
@@ -608,13 +605,13 @@ instance Singleton (Set k) k where
   singleton = S.singleton
 
 instance Singleton Env (TVar, Type) where
-  singleton (k, a) = (M.singleton k a, emptyExtendedEnv)
+  singleton (k, a) = Env (M.singleton k a) emptyExtendedEnv
 
 instance Singleton Env (FVar, Flow) where
-  singleton (k, a) = (M.empty, emptyExtendedEnv { flowMap = M.singleton k a })
+  singleton (k, a) = Env M.empty $ emptyExtendedEnv { flowMap = M.singleton k a }
 
 instance Singleton Env (SVar, Scale) where
-  singleton (k, a) = (M.empty, emptyExtendedEnv { scaleMap = M.singleton k a })
+  singleton (k, a) = Env M.empty $ emptyExtendedEnv { scaleMap = M.singleton k a }
 
 instance Singleton Env (BVar, Base) where
-  singleton (k, a) = (M.empty, emptyExtendedEnv { baseMap = M.singleton k a })
+  singleton (k, a) = Env M.empty $ emptyExtendedEnv { baseMap = M.singleton k a }
