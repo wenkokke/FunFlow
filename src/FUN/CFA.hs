@@ -10,6 +10,8 @@ import Text.Printf (printf)
 
 import Prelude hiding (mapM)
 
+import Debug.Trace
+
 import Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -19,7 +21,9 @@ import qualified Data.List as L (union)
 import Data.Traversable (forM,mapM)
 
 import Control.Monad (join, foldM)
+
 import Control.Applicative hiding (empty)
+import qualified Control.Applicative as A
 
 import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
 import Control.Monad.Supply (Supply, SupplyT, supply, evalSupply, evalSupplyT)
@@ -204,6 +208,9 @@ instance Subst Env where
 instance Subst ScaleConstraint where
   subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
 
+instance Subst (Set ScaleConstraint) where
+  subst m = S.map (subst m) 
+  
 instance Subst BaseConstraint where
   subst m (BaseEquality ss) = BaseEquality $ map (subst m) ss
   subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
@@ -265,7 +272,7 @@ occurs :: TVar -> Type -> Bool
 occurs n t = n `elem` (ftv t)
 
 data ExtendedEnv = ExtendedEnv { cfaMap :: Map FVar Flow, scaleMap :: Map SVar Scale, baseMap :: Map BVar Base }   
-
+     deriving Show 
 type Env = (Map TVar Type, ExtendedEnv)
 
 type CFA a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
@@ -616,12 +623,21 @@ data ScaleConstraint
      
 instance Show ScaleConstraint where
   show (ScaleEquality ss) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap show $ ss) 
-     
-solveScaleConstraints :: Set Constraint -> [ScaleConstraint]
-solveScaleConstraints = concatMap findScales . S.toList where
-  findScales (ScaleConstraint ss) = [ss]
-  findScales _                    = [  ]
+  
+unionMap :: (Ord a, Ord b) => (a -> Set b) -> Set a -> Set b
+unionMap f = S.unions . map f . S.toList
+  
+extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
+extractScaleConstraints = unionMap findScales where
+    findScales (ScaleConstraint ss) = S.singleton ss
+    findScales _                    = S.empty
 
+maybeHead :: [a] -> Maybe a
+maybeHead [] = Nothing
+maybeHead (x:_) = Just x
+    
+solveScaleConstraints :: Set ScaleConstraint -> Env
+solveScaleConstraints cs = mempty   
 data BaseConstraint 
   = BaseEquality [Base] 
   | BasePreservation (Base, Base) Base
@@ -651,10 +667,10 @@ printFlowInformation m =
       suffix = "}"
   in prefix ++ content ++ suffix
 
-printScaleInformation :: [ScaleConstraint] -> String
+printScaleInformation :: Set ScaleConstraint -> String
 printScaleInformation m =
   let prefix = "{\n"
-      content = foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
+      content = S.foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
 
@@ -689,4 +705,7 @@ runCFA ds =
                                      let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
   
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
-                                     return (env, Prog $ labeledLib ++ labeledDecls, c0)
+                                     
+                                     let scaleSubst = solveScaleConstraints . extractScaleConstraints $ c0                                      
+                          
+                                     return (subst scaleSubst env, Prog $  (labeledLib ++ labeledDecls), c0)

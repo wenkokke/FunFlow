@@ -11,7 +11,7 @@ import FUN.W (runW)                     -- ^ type inference
 import FUN.CFA 
   ( runCFA, prelude, TypeError, Env, Constraint, showType
   , printFlowInformation,  solveFlowConstraints
-  , printScaleInformation, solveScaleConstraints
+  , printScaleInformation, solveScaleConstraints, extractScaleConstraints
   , printBaseInformation,  solveBaseConstraints
   , TVar (..), Type (..)
   ) -- ^ control flow analysis
@@ -60,7 +60,7 @@ main =
       put :: (Env, Prog, Set Constraint) -> String
       put (m, p, w) = let programInfo = "program = " ++ printProgram p m
                           flowInfo  = "control flow = " ++ (printFlowInformation . solveFlowConstraints $ w)
-                          scaleInfo  = "scale constraints = " ++ (printScaleInformation . solveScaleConstraints $ w)
+                          scaleInfo  = "scale constraints = " ++ (printScaleInformation . extractScaleConstraints $ w)
                           baseInfo  = "base constraints = " ++ (printBaseInformation . solveBaseConstraints $ w)
                         
                       in    programInfo ++ "\n\n"

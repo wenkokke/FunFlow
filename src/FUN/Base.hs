@@ -37,7 +37,7 @@ instance Show Scale where
   show SFeet    = "Feet"   ; show SMeter   = "Meter"
   show SDollar  = "Dollar" ; show SEuro    = "Euro"
   show SKelvin  = "Kelvin" ; show SCelcius = "Celcius"
-  show SSeconds = "Seconds"; show SMinutes = "Minutes"; show SHours = "Hours"
+  show SSeconds = "Second"; show SMinutes = "Minute"; show SHours = "Hour"
   
 data Base
   = BVar BVar
