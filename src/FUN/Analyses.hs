@@ -391,9 +391,9 @@ refreshAll env = do (env, p, c) <- env;
 -- |Replaces every type variable with a fresh one.
 refresh :: Type -> Analysis Type
 refresh t1 = do subs <- forM (ftv t1) $ \a ->
-                          do b <- fresh :: Analysis Type
+                          do b <- (fresh :: Analysis Type)
                              return $ singleton (a, b)
-                return $ subst (mconcat subs) t1
+                return $ subst (mconcat subs :: Env) t1
 
 class Fresh t where
   fresh :: Analysis t
@@ -450,7 +450,10 @@ extractBaseConstraints = unionMap findBases where
                     
 -- * Environments
 
-data Env = Env (Map TVar Type) ExtendedEnv
+data Env = Env
+  { getPrimary  :: (Map TVar Type)
+  , getExtended :: ExtendedEnv
+  }
 
 data ExtendedEnv = ExtendedEnv
   { flowMap  :: Map FVar Flow
@@ -464,13 +467,10 @@ emptyExtendedEnv = ExtendedEnv {
   baseMap  = M.empty
 }
                                      
--- * Substitutions
-
-class Subst w where
-  subst :: Env -> w -> w
+-- * Extend Substitutions to @Env@
 
 -- |Substitutes a type for a type variable in a type.
-instance Subst Type where
+instance Subst Env Type where
   subst m TBool = TBool
   subst m r@(TInt s b)     = TInt (subst m s) (subst m b)
   subst m v@(TVar n)       = M.findWithDefault v n (getPrimary m)
@@ -479,48 +479,22 @@ instance Subst Type where
   subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
   subst m (TUnit v nm)     = TUnit (subst m v) nm
 
-instance Subst Env where
+instance Subst Env Env where
   subst m (Env r w) = Env (fmap (subst m) r) w
 
-instance Subst Constraint where
+instance Subst Env Constraint where
   subst m (FlowConstraint r)      = FlowConstraint $ subst m r
   subst m (ScaleConstraint ss)    = ScaleConstraint $ subst m ss
   subst m (BaseConstraint ss)     = BaseConstraint $ subst m ss
-
-instance Subst FlowConstraint where
-  subst m (Flow nm v l) = Flow nm (subst m v) l
   
-instance Subst ScaleConstraint where
-  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
+instance Subst Env Flow where
+  subst e = subst (flowMap $ getExtended e)
 
-instance Subst BaseConstraint where
-  subst m (BaseEquality ss) = BaseEquality $ map (subst m) ss
-  subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
-  subst m (BaseSelection (x, y) z) = BaseSelection (subst m x, subst m y) (subst m z)
+instance Subst Env Scale where
+  subst e = subst (scaleMap $ getExtended e)
 
-getPrimary :: Env -> Map TVar Type
-getPrimary (Env a b) = a
-  
-getExtended :: Env -> ExtendedEnv
-getExtended (Env a b) = b
-  
-  
-  
-instance Subst Flow where
-  subst m v@(FVar n) = M.findWithDefault v n (flowMap $ getExtended m)
-
-instance Subst Scale where
-  subst m v@(SVar n) = M.findWithDefault v n (scaleMap $ getExtended m)
-  subst m (SMul a b) = SMul (subst m a) (subst m b)
-  subst m (SInv a) = SInv (subst m a)
-  subst m v@_ = v
-
-instance Subst Base where
-  subst m v@(BVar n) = M.findWithDefault v n (baseMap $ getExtended m)
-  subst m v@_ = v
-
-instance (Subst a, Ord a) => Subst (Set a) where
-  subst m = S.map (subst m)
+instance Subst Env Base where
+  subst e = subst (baseMap $ getExtended e)
 
 -- * Unifications
 
@@ -603,15 +577,6 @@ unifyBase b1 b2 =
                  else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
 
 -- * Singleton Constructors
-
-class Singleton w k where
-  singleton :: k -> w
-
-instance Singleton (Map k a) (k, a) where
-  singleton = uncurry M.singleton
-
-instance Singleton (Set k) k where
-  singleton = S.singleton
 
 instance Singleton Env (TVar, Type) where
   singleton (k, a) = Env (M.singleton k a) emptyExtendedEnv

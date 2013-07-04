@@ -1,4 +1,10 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Flow where
+
+import FUN.Analyses.Utils
 
 import Data.Monoid
 import Data.Map (Map)
@@ -6,12 +12,12 @@ import qualified Data.Map as M
 import Data.Set (Set,union)
 import qualified Data.Set as S
 
--- | Flow Variable
+-- * Flow
+
 type FVar = String
 
 -- | Program points.
-type Label
-  = String
+type Label = String
 
 -- |Control Flow Annotation. To keep things Simple, only variables are allowed
 data Flow 
@@ -45,19 +51,19 @@ solveFlowConstraints =
 -- |Pretty print the Annotated Type Variable -> Program Point Set map.
 --  Names between brackets correspond to Annotated Type Variables 
 --  and Names between brackets correspond to Program Points
-printFlow :: Map FVar (String, Set Label) -> String
-printFlow m = 
-  let prefix = "{\n"
-      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
-      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
-      suffix = "}"
-  in prefix ++ content ++ suffix
-
 
 printFlowInformation :: Map FVar (String, Set Label) -> String
 printFlowInformation m =
   let prefix = "{\n"
-      printCon (nm, v) = nm ++ "\t{ " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ " }"
-      content = M.foldWithKey (\k a as -> "  " ++ k ++ "\t~> " ++ printCon a ++ "\n" ++ as) "" m
+      printCon (nm, v) = nm ++ "\t[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]"
+      content = M.foldWithKey (\k a as -> "  {" ++ k ++ "}\t~> " ++ printCon a ++ "\n" ++ as) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
+  
+-- * Substitutions
+
+instance Subst (Map FVar Flow) Flow where
+  subst m v@(FVar n) = M.findWithDefault v n m
+
+instance (Subst e Flow) => Subst e FlowConstraint where
+  subst m (Flow nm v l) = Flow nm (subst m v) l

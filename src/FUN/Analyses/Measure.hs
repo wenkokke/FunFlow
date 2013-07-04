@@ -1,4 +1,10 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Measure where
+
+import FUN.Analyses.Utils
 
 import Data.Monoid
 import Data.Map (Map)
@@ -34,7 +40,7 @@ instance Show Scale where
   show (SInv a)           = "1/(" ++ show a ++ ")"
 
 instance Show Base where
-  show BNil     = "Unit"
+  show BNil     = "None"
   show (BVar v) = "[" ++ v ++ "]"
   show (BCon c) = c
 
@@ -65,13 +71,20 @@ instance Show BaseConstraint where
                        ++ "; if " ++ show x ++ " = none then " ++ show y
                        ++ "; else error"
 
--- * Constraint solvers
-
-type SSubst = Map SVar Scale
-type BSubst = Map BVar Base
+-- * Constraint Solving
 
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
 solveScaleConstraints cs = mempty
+
+solveVars :: [Scale] -> SSubst
+solveVars = mkSSubst . getSVars where
+  mkSSubst :: [SVar] -> SSubst
+  mkSSubst (a:bs) = foldr (\b m -> m <> singleton (b,SVar a)) mempty bs
+  getSVars :: [Scale] -> [SVar]
+  getSVars = map getSVar . filter isSVar where
+    isSVar  (SVar _) = True
+    isSVar        _  = False
+    getSVar (SVar v) = v
 
 solveBaseConstraints :: Set BaseConstraint -> BSubst
 solveBaseConstraints cs = mempty
@@ -89,3 +102,55 @@ printBaseInformation m =
       content = S.foldr (\x xs -> "  " ++ show x ++ "\n" ++ xs) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
+  
+-- * Scale Substitutions
+  
+instance Subst (Map SVar Scale) Scale where
+  subst m v@(SVar n)   = M.findWithDefault v n m
+  subst m   (SMul a b) = SMul (subst m a) (subst m b)
+  subst m   (SInv a)   = SInv (subst m a)
+  subst m v@_ = v
+  
+instance (Subst e Scale) => Subst e ScaleConstraint where
+  subst m (ScaleEquality ss) = ScaleEquality $ map (subst m) ss
+
+newtype SSubst = SSubst { getSSubst :: Map SVar Scale }
+
+instance Subst SSubst Scale where
+  subst (SSubst m) = subst m
+  
+instance Subst SSubst SSubst where
+  subst m (SSubst s) = SSubst (subst m s)
+  
+instance Monoid SSubst where
+  mempty      = SSubst mempty
+  mappend s t = SSubst (getSSubst (subst s t) <> getSSubst (subst t s))
+  
+instance Singleton SSubst (SVar,Scale) where
+  singleton (k,a) = SSubst (M.singleton k a)
+  
+-- * Base Substitutions
+
+instance Subst (Map BVar Base) Base where
+  subst m v@(BVar n) = M.findWithDefault v n m
+  subst m v@_ = v
+  
+instance (Subst e Base) => Subst e BaseConstraint where
+  subst m (BaseEquality ss)           = BaseEquality $ map (subst m) ss
+  subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
+  subst m (BaseSelection (x, y) z)    = BaseSelection (subst m x, subst m y) (subst m z)
+
+newtype BSubst = BSubst { getBSubst :: Map BVar Base }
+
+instance Subst BSubst Base where
+  subst (BSubst m) = subst m
+
+instance Subst BSubst BSubst where
+  subst m (BSubst s) = BSubst (subst m s)
+  
+instance Monoid BSubst where
+  mempty      = BSubst mempty
+  mappend s t = BSubst (getBSubst (subst s t) <> getBSubst (subst t s))
+  
+instance Singleton BSubst (BVar,Base) where
+  singleton (k,a) = BSubst (M.singleton k a)
