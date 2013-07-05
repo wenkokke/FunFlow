@@ -48,18 +48,21 @@ prelude :: Analysis (Env, [Decl])
 prelude = 
   let id = Abs noLabel "x" (Var "x")
       predefs =
-        [ ("asKelvin",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" )  BNil))
-        , ("asCelcius", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" )  (BCon "Freezing")))
-        , ("asFeet",    id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Feet"   )  BNil))
-        , ("asMeters",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Meter"  )  BNil))
-        , ("asDollars", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Dollar" )  BNil))
-        , ("asEuros",   id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Euro"   )  BNil))
-        , ("asSeconds", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Second" )  BNil))
+        [ ("asKelvin",  "Kelvin", id, \v s -> TArr v (TInt SNil BNil) (TInt s  BNil))
+        , ("asCelcius", "Kelvin", id, \v s -> TArr v (TInt SNil BNil) (TInt s  (BCon "Freezing")))
+        , ("asFeet",    "Feet",   id, \v s -> TArr v (TInt SNil BNil) (TInt s  BNil))
+        , ("asMeters",  "Meter",  id, \v s -> TArr v (TInt SNil BNil) (TInt s  BNil))
+        , ("asDollars", "Dollar", id, \v s -> TArr v (TInt SNil BNil) (TInt s  BNil))
+        , ("asEuros",   "Euro",   id, \v s -> TArr v (TInt SNil BNil) (TInt s  BNil))
+        , ("asSeconds", "Second", id, \v s -> TArr v (TInt SNil BNil) (TInt s  BNil))
         ]
-  in do ps <- mapM (\(nm, e, f) -> do v <- fresh;
-                                      return ( (nm, f v), Decl nm e)) $ predefs;
+  in do ps <- mapM (\(nm, u, e, f) -> do v <- fresh;
+                                        
+                                         return ( (nm, f v $ SCon u), Decl nm e) ) $ predefs;
         let (env, ds) = unzip ps;
-        return (Env (M.fromList env) emptyExtendedEnv, ds)
+        return ( Env (M.fromList env) emptyExtendedEnv
+               , ds
+               )
         
 printProgram :: Bool -> Prog -> Env -> String
 printProgram annotations (Prog p) env = 
@@ -176,7 +179,7 @@ instance Show TypeError where
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 
--- |`(x ~> t) env` can be read as 'rewrite variable `x` to type `t` in the environment `env`
+-- |`(x ~> t) env` can be read as 'simplify variable `x` to type `t` in the environment `env`
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(Env m w) -> Env (M.insert x t m) w
 
@@ -194,6 +197,13 @@ instance Monoid Env where
 
 -- * Algorithm W for Type Inference
 
+instance Rewrite Constraint where
+  simplify (ScaleConstraint ss) = ScaleConstraint $ simplify ss
+  simplify v@_ = v
+   
+instance Rewrite ScaleConstraint where
+  simplify (ScaleEquality s) = ScaleEquality $ simplify s
+  
 -- |Runs Algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
 analyseAll :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
@@ -221,7 +231,7 @@ analyseAll ds =
                                      
                                      return ( subst b_s1 . subst s_s0 $ env 
                                             , Prog $ (labeledLib ++ labeledDecls)
-                                            , subst b_s1 . subst s_s0 $ c0
+                                            , simplify . simplify . simplify $ subst b_s1 . subst s_s0 $ c0
                                             )
 
 -- |Runs the Algorithm W inference for Types and generates constraints later used 

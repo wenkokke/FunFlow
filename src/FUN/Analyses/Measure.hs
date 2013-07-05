@@ -8,6 +8,8 @@ module FUN.Analyses.Measure where
 
 import FUN.Analyses.Utils
 
+import Debug.Trace
+
 import Data.Functor
 import Data.Monoid
 
@@ -81,46 +83,45 @@ instance Show BaseConstraint where
 -- * Constraint Solving
 
 class Rewrite s where
-  rewrite :: s -> s
+  simplify :: s -> s
     
 instance Rewrite SSubst where
-  rewrite (SSubst r) = SSubst $ M.map rewrite r
+  simplify (SSubst r) = SSubst $ M.map simplify r
+
+instance (Rewrite a, Ord a) => Rewrite [a] where
+  simplify = map simplify
+  
+instance (Rewrite a, Ord a) => Rewrite (Set a) where
+  simplify = S.map simplify
     
-    
--- |Recursively rewrite Scale expression in an attempt to put them in a normal form. Apart
+-- |Recursively simplify Scale expression in an attempt to put them in a normal form. Apart
 --  from the obvious cancelations, this algorithm tries to move inverses outwards and re-
 --  associates multiplication to the right. Inverses drift towards the right. The idea
 --  is that this makes it easier for a future algorithm to perform non-local simplifications
 --
---  The rewrite algorithm is called after each round of variable elimination and hopefully
+--  The simplify algorithm is called after each round of variable elimination and hopefully
 --  creates new opportunities for the next round.
 instance Rewrite Scale where
-  rewrite (SInv SNil)          = SNil
-  rewrite (SInv (SInv a))      = rewrite a
-  rewrite (SInv (SMul a b))    = SMul (SInv $ rewrite a) (SInv $ rewrite b)
+  simplify (SInv SNil)          = SNil
+  simplify (SInv (SInv a))      = simplify a
+  simplify (SInv (SMul a b))    = SMul (simplify $ SInv a) (simplify $ SInv b)
   
-  rewrite (SMul a SNil)        = rewrite a
-  rewrite (SMul SNil a)        = rewrite a
+  simplify (SMul a SNil)        = simplify a
+  simplify (SMul SNil a)        = simplify a
 
-  rewrite (SMul a (SInv SNil)) = rewrite a
-  rewrite (SMul (SInv SNil) a) = rewrite a
+  simplify (SMul a (SInv SNil)) = simplify a
+  simplify (SMul (SInv SNil) a) = simplify a
   
-  rewrite (SMul a (SInv b))          | a == b = SNil
-                                     | otherwise = SMul (rewrite a) (SInv $ rewrite b)
-  rewrite (SMul (SInv a) b)          | a == b = SNil
-                                     | otherwise = SMul (rewrite b) (SInv $ rewrite a)
-  
-  rewrite (SMul (SMul a (SInv b)) c) | b == c = rewrite a
-                                     | otherwise = SMul (rewrite a) (SMul (rewrite c) (SInv $ rewrite b)) 
-  rewrite (SMul (SMul (SInv a) b) c) | a == c = rewrite b
-                                     | otherwise = SMul (rewrite b) (SMul (rewrite c) (SInv $ rewrite a)) 
+  simplify (SMul a (SInv b))    | a == b = SNil 
+  simplify (SMul (SInv a) b)    | a == b = SNil
+                                     
+  simplify (SMul (SMul a (SInv b)) c) | b == c = simplify a
+  simplify (SMul (SMul (SInv a) b) c) | a == c = simplify b
 
-  rewrite (SMul a (SMul b (SInv c))) | a == c = rewrite b
-                                     | otherwise = SMul (rewrite a) (SMul (rewrite b) (SInv $ rewrite c))
-  rewrite (SMul a (SMul (SInv b) c)) | a == b = rewrite c
-                                     | otherwise = SMul (rewrite a) (SMul (rewrite c) (SInv $ rewrite b))
- 
-  rewrite v@_                  = v
+  simplify (SMul a (SMul b (SInv c))) | a == c = simplify b
+  simplify (SMul a (SMul (SInv b) c)) | a == b = simplify c  
+    
+  simplify v@_                  = v
 
 iterationCount :: Int
 iterationCount = 16
@@ -129,31 +130,28 @@ iterationCount = 16
 --  All constraints are equality constraints, and the @solveBaseEquality phase is
 --  idempotent. Unfortunately, due to non-linear nesting, not all constraints can
 --  be handled in this way. Equality solving is done in different rounds, each 
---  round ending with a rewrite phase that tries to mend the Scale constraints
+--  round ending with a simplify phase that tries to mend the Scale constraints
 --  into a normal form. Because this no normal form is guaranteed to be reached,
 --  there is a hard coded limit on how rounds to try.
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints c = loop iterationCount mempty where  
-  loop 0 s0 = s0
-  loop n s0 = 
-    let s1 = solveScaleEquality $ subst s0 c0
-    in loop (n-1) (rewrite $ s1 <> s0)
+solveScaleConstraints = loop iterationCount mempty . unionMap filterEquality where  
+  loop 0 s0 _ = s0
+  loop n s0 c0 = 
+    let s1 = solveScaleEquality $ c0
+    in loop (n-1) (simplify $ s1 <> s0) (simplify $ subst s1 c0)
 
   filterEquality (ScaleEquality gr) = singleton gr  
-
-  c0 = unionMap filterEquality $ c
 
   
 -- |Iteratively reduce equality constraints until no more reductions are possible.
 -- |First
 solveScaleEquality:: Set (Set Scale) -> SSubst
-solveScaleEquality = loop iterationCount mempty where
-  loop 0 s0 _  = s0
-  loop n s0 c0 =
+solveScaleEquality = loop mempty where
+  loop s0 c0 =
     let s1 = F.foldMap solveCons c0
     in if s1 == mempty
           then s0
-          else loop (n-1) (s1 <> s0) (subst s1 c0)
+          else loop (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
     list = S.toList cs
@@ -167,7 +165,10 @@ solveScaleEquality = loop iterationCount mempty where
     --  unify all other variables with it. If there are two or more
     --  definite Scales known then no further unification is possible
     --  at this point.
-    single [     ] = SVar <$> maybeHead vars
+    single [     ] = case vars of
+                       [ ] -> Nothing
+                       [x] -> Nothing
+                       (x:y:xs) -> Just $ SVar x
     single [  x  ] = Just $ x
     single (x:y:_) = Nothing
     
@@ -179,8 +180,8 @@ solveScaleEquality = loop iterationCount mempty where
   getSCons = filter isSCon where
     isSCon  (SNil    ) = True
     isSCon  (SCon _  ) = True
-    isSCon  (SInv a  ) = isSCon a
-    isSCon  (SMul a b) = isSCon a && isSCon b
+    isSCon  (SInv a  ) = True -- isSCon a
+    isSCon  (SMul a b) = True -- isSCon a && isSCon b
     isSCon  (SVar _  ) = False
 
   -- |A list of all Scale variables in this eq constraint
@@ -252,13 +253,12 @@ solveBasePreservation = F.foldMap solver where
 
 -- |See @solveScaleEquality for details
 solveBaseEquality:: Set (Set Base) -> BSubst
-solveBaseEquality = loop iterationCount mempty where
-  loop 0 s0 _  = s0
-  loop n s0 c0 =
+solveBaseEquality = loop mempty where
+  loop s0 c0 =
     let s1 = F.foldMap solveCons $ subst s0 c0
     in if s1 == mempty
           then s0
-          else loop (n-1) (s1 <> s0) (subst s1 c0)
+          else loop (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
     list = S.toList cs
@@ -266,7 +266,10 @@ solveBaseEquality = loop iterationCount mempty where
     cons = getBCons list
     vars = getBVars list
     
-    single [     ] = BVar <$> maybeHead vars
+    single [     ] = case vars of
+                          [ ] -> Nothing
+                          [x] -> Nothing
+                          (x:y:[]) -> Just $ BVar x
     single [  x  ] = Just $ x
     single (x:y:_) = Nothing
     

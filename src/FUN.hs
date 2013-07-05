@@ -84,8 +84,8 @@ exMeasure = fmap parseDecl $
   , "r2 = t1 * v1"
   , "t = r1 + r2"
   , "s = r1 / r2"
- 
-  , "doCalc s t = (s / t) * (asMeters 5 / asMeters 3)"
+  
+  , "calc s t = (s / t) * (asMeters 5) / (asSeconds 3)" 
   ]
 
 exLoop unfolded = fmap parseDecl $
