@@ -102,7 +102,7 @@ solveScaleConstraints = F.foldMap solveOne where
     list = S.toList cs   :: [Scale]
     cons = getSCons list :: [Scale]
     vars = getSVars list :: [SVar]
-    single [     ] = Just $ SVar (head vars)
+    single [     ] = SVar `fmap` maybeHead vars
     single [  x  ] = Just $ x
     single (x:y:_) = Nothing
     withSingle (Just  x) = foldr (\v m -> m <> singleton (v,x)) mempty vars
@@ -110,10 +110,11 @@ solveScaleConstraints = F.foldMap solveOne where
     
   getSCons :: [Scale] -> [Scale]
   getSCons = filter isSCon where
+    isSCon   SNil      = True
     isSCon  (SCon _)   = True
     isSCon  (SInv a)   = isSCon a
     isSCon  (SMul a b) = isSCon a && isSCon b
-    isSCon        _    = False
+    isSCon  (SVar _)   = False
   
   solveVars :: Set Scale -> SSubst
   solveVars = mkSSubst . getSVars . S.toList where
@@ -155,8 +156,8 @@ instance Subst (Map SVar Scale) Scale where
 instance (Subst e Scale) => Subst e ScaleConstraint where
   subst m (ScaleEquality ss) = ScaleEquality $ subst m ss
 
-newtype SSubst = SSubst
-  { getSSubst :: Map SVar Scale
+newtype SSubst = SSubst { 
+    getSSubst :: Map SVar Scale
   } deriving (Eq, Ord, Show)
 
 instance Subst SSubst Scale where

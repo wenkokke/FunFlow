@@ -181,13 +181,19 @@ analyseAll ds =
                                      
                                      -- do a second run of constraint solving
                                      let ss2  = solveScaleConstraints sc1
-                                     let env2 = subst ss2 env
+                                     let env2 = subst (ss1 <> ss2) env
                                      let sc2  = S.filter isValidScaleConstraint . subst ss2 $ sc1
-                                     
+                                    
+                                     -- do a second run of constraint solving
+                                     let ss3  = solveScaleConstraints sc2
+                                     let env3 = subst (ss1 <> ss2 <> ss3) env
+                                     let sc3  = S.filter isValidScaleConstraint . subst ss3 $ sc2
+                                    
+                                    
                                      -- update the final constraint set
-                                     let c2   = subst ss2 c0
+                                     let c2   = subst (ss1 <> ss2 <> ss3) c0
                                      
-                                     return (env2, Prog $ (labeledLib ++ labeledDecls), c2)
+                                     return (env3, Prog $ (labeledLib ++ labeledDecls), c2)
 
 -- |Runs the Algorithm W inference for types, control flow and measures.
 analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
