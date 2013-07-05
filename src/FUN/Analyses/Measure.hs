@@ -6,6 +6,8 @@ module FUN.Analyses.Measure where
 
 import FUN.Analyses.Utils
 
+import Debug.Trace
+
 import Data.Monoid
 import Data.Map (Map)
 import Data.Functor
@@ -77,9 +79,6 @@ instance Show BaseConstraint where
 
 -- * Constraint Solving
 
-isValidScaleConstraint :: ScaleConstraint -> Bool
-isValidScaleConstraint (ScaleEquality cs) = S.size cs > 1
-
 class Rewrite s where
   rewrite :: s -> s
     
@@ -88,37 +87,44 @@ instance Rewrite SSubst where
     
 instance Rewrite Scale where
   rewrite (SInv SNil)          = SNil
-  rewrite (SInv (SMul a b))    = SMul (SInv $ rewrite a) (SInv $ rewrite b)
   rewrite (SInv (SInv a))      = rewrite a
-  rewrite (SMul a SNil)        = rewrite a
-  rewrite (SMul a (SInv SNil)) = rewrite a
-  rewrite (SMul a (SInv b)) | a == b = rewrite a
-                            | otherwise = SMul (rewrite a) (SInv $ rewrite b)
-  rewrite (SMul a b@(SVar _))  = SMul b (rewrite a) 
-  rewrite (SMul (SMul a (SInv b)) c) | b == c = rewrite a
-                                     | otherwise = SMul (SMul (rewrite a) (rewrite c)) (SInv $ rewrite b) 
-  rewrite (SMul (SInv a) b)    = SMul (rewrite b) (SInv $ rewrite a)
+  rewrite (SInv (SMul a b))    = SMul (SInv $ rewrite a) (SInv $ rewrite b)
   
+  rewrite (SMul a SNil)        = rewrite a
+  rewrite (SMul SNil a)        = rewrite a
+
+  rewrite (SMul a (SInv SNil)) = rewrite a
+  rewrite (SMul (SInv SNil) a) = rewrite a
+  
+  rewrite (SMul a (SInv b))          | a == b = SNil
+                                     | otherwise = SMul (rewrite a) (SInv $ rewrite b)
+  rewrite (SMul (SInv a) b)          | a == b = SNil
+                                     | otherwise = SMul (rewrite b) (SInv $ rewrite a)
+  
+  rewrite (SMul (SMul a (SInv b)) c) | b == c = rewrite a
+                                     | otherwise = SMul (rewrite a) (SMul (rewrite c) (SInv $ rewrite b)) 
+  rewrite (SMul (SMul (SInv a) b) c) | a == c = rewrite b
+                                     | otherwise = SMul (rewrite b) (SMul (rewrite c) (SInv $ rewrite a)) 
+
+  rewrite (SMul a (SMul b (SInv c))) | a == c = rewrite b
+                                     | otherwise = SMul (rewrite a) (SMul (rewrite b) (SInv $ rewrite c))
+  rewrite (SMul a (SMul (SInv b) c)) | a == b = rewrite c
+                                     | otherwise = SMul (rewrite a) (SMul (rewrite c) (SInv $ rewrite b))
+ 
   rewrite v@_                  = v
 
 
--- complete unification algorithm without thinking about commutativity
--- of the (*) operator, and then "fold" the equality constraints with the
--- unification function.
---
--- then perform one round of imperfect unification across all equality
--- constraints, and apply the result to *all* equality constraints.
---
--- then begin the algorithm anew, and continue for n rounds (because we
--- can't be sure a fixpoint will ever be found).
-
 
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints c = 
-  let filterEquality (ScaleEquality gr) = singleton gr
-      c0 = unionMap filterEquality $ c
-      s0 = solveScaleEquality $ c0 
-  in rewrite s0
+solveScaleConstraints c = loop 8 mempty where  
+  loop 0 s0 = s0
+  loop n s0 = 
+    let s1 = solveScaleEquality $ subst s0 c0
+    in loop (n-1) (rewrite $ s1 <> s0)
+
+  filterEquality (ScaleEquality gr) = singleton gr  
+
+  c0 = unionMap filterEquality $ c
 
 solveScaleEquality:: Set (Set Scale) -> SSubst
 solveScaleEquality = loop mempty where
@@ -153,26 +159,67 @@ solveScaleEquality = loop mempty where
               _      -> [ ]
        
 solveBaseConstraints :: Set BaseConstraint -> BSubst
-solveBaseConstraints c = 
-  let filterEquality  (BaseEquality gr) = singleton gr
-      filterEquality _                  = S.empty
+solveBaseConstraints c0 = loop mempty where
+  loop s0 = 
+    let c1 = subst s0 . unionMap filterEquality $ c0
+        s1 = solveBaseEquality $ c1
       
-      filterSelection (BaseSelection (x, y) z) = singleton (x, y, z)
-      filterSelection _                        = S.empty
+        c2 = subst (s1 <> s0) . unionMap filterSelection $ c0
+        s2 = solveBaseSelection $ c2
+      
+        c3 = subst (s2 <> s1 <> s0) . unionMap filterPreservation $ c0
+        s3 = solveBasePreservation $ c3
 
-      filterPreservation (BasePreservation (x, y) z) = singleton (x, y, z)
-      filterPreservation _                           = S.empty
+    in if s1 == mempty &&
+          s2 == mempty &&
+          s3 == mempty
+          then s0
+          else loop (s3 <> s2 <> s1 <> s0)
 
       
-      c0 = unionMap filterEquality $ c
-      s0 = solveBaseEquality $ c0
-      c1 = subst s0 c0
-  in s0
+  filterEquality  (BaseEquality gr) = singleton gr
+  filterEquality _                  = S.empty
+  
+  filterSelection (BaseSelection (x, y) z) = singleton (x, y, z)
+  filterSelection _                        = S.empty
+
+  filterPreservation (BasePreservation (x, y) z) = singleton (x, y, z)
+  filterPreservation _                           = S.empty
+
+solveBaseSelection :: Set (Base, Base, Base) -> BSubst
+solveBaseSelection = F.foldMap solver where
+  solver (x, y, BVar z) = if x == BNil
+                             then singleton (z, y) 
+                             else
+                          if y == BNil
+                             then singleton (z, x) 
+                             else mempty
+  solver (BNil, y, z) = case (y, z) of
+                          (BVar a, b) -> singleton (a, b)
+                          (a, BVar b) -> singleton (b, a)
+                          (_,      _) -> mempty
+  solver (x, BNil, z) = case (x, z) of
+                          (BVar a, b) -> singleton (a, b)
+                          (a, BVar b) -> singleton (b, a)
+                          (_,      _) -> mempty        
+                          
+solveBasePreservation :: Set (Base, Base, Base) -> BSubst
+solveBasePreservation = F.foldMap solver where
+  solver (x, y, BVar z) = if y == BNil
+                             then singleton (z, x) 
+                             else
+                          if x == y
+                             then singleton (z, BNil) 
+                             else mempty 
+  solver (x, BNil, z) = case (x, z) of
+                          (BVar a, b) -> singleton (a, b)
+                          (a, BVar b) -> singleton (b, a)
+                          (_,      _) -> mempty        
 
 solveBaseEquality:: Set (Set Base) -> BSubst
 solveBaseEquality = loop mempty where
   loop s0 c0 =
-    let s1 = F.foldMap solveCons c0
+    let s1 = F.foldMap solveCons $ subst s0 c0
     in if s1 == mempty
           then s0
           else loop (s1 <> s0) (subst s1 c0)
@@ -261,6 +308,10 @@ newtype BSubst = BSubst
 instance Subst BSubst Base where
   subst (BSubst m) = subst m
 
+instance Subst BSubst (Base, Base, Base) where
+  subst m (a, b, c) = (subst m a, subst m b, subst m c)
+
+  
 instance Subst BSubst BSubst where
   subst m (BSubst s) = BSubst (subst m s)
   

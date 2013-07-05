@@ -60,22 +60,20 @@ main :: IO ()
 main = 
   let prog = example
         
-      put :: (Env, Prog, Set Constraint) -> String
-      put (m, p, w) = let programInfo = "program = " ++ printProgram p m
-                          flowInfo  = "control flow = "
-                            ++ (printFlowInformation . solveFlowConstraints . extractFlowConstraints $ w)
-                          scaleInfo  = "scale constraints = "
-                            ++ (printScaleInformation . extractScaleConstraints $ w)
-                          baseInfo  = "base constraints = "
-                            ++ (printBaseInformation . extractBaseConstraints $ w)
-                        
-                      in    programInfo ++ "\n\n"
-                         ++ flowInfo    ++ "\n\n"
-                         ++ scaleInfo   ++ "\n\n"
-                         ++ baseInfo    ++ "\n\n"
-      env :: Either TypeError (Env, Prog, Set Constraint)
-      env = analyseAll prog
-  in either print (putStrLn . put) env
+      showResult :: (Env, Prog, Set Constraint) -> String
+      showResult (m, p, w) =  let programInfo = "program = " ++ printProgram p m
+                                  flowInfo  = "control flow = "
+                                    ++ (printFlowInformation . solveFlowConstraints . extractFlowConstraints $ w)
+                                  scaleInfo  = "scale constraints = "
+                                    ++ (printScaleInformation . extractScaleConstraints $ w)
+                                  baseInfo  = "base constraints = "
+                                    ++ (printBaseInformation . extractBaseConstraints $ w)
+                                
+                              in programInfo ++ "\n\n"
+                              ++ flowInfo    ++ "\n\n"
+                              ++ scaleInfo   ++ "\n\n"
+                              ++ baseInfo    ++ "\n\n"
+  in either print (putStrLn . showResult) . analyseAll $ prog
         
 exCategory = fmap parseDecl $
   [ "compose f g x = f (g x)"
@@ -122,8 +120,8 @@ exSilly = fmap parseDecl $
   ]
 
   
-exLoop = fmap parseDecl $
-  if True then
+exLoop unfolded = fmap parseDecl $
+  if unfolded then
   [ "fy = fun y => y"
   , "g = fix f x => f fy"
   , "fz = fun z => z"
@@ -152,6 +150,20 @@ exSum = fmap parseDecl $
  ++ "                       Either.Right y -> false"
   ]
 
+exControlFlow = concat $
+  [ exCategory
+  , exPair
+  , exCurry 
+  , exMap
+  , exId
+  , exFunction
+  , exLoop True
+  , exSilly
+  , exPairimental
+  , exSum
+  ]
+
+  
 exMeasure = fmap parseDecl $
   [ "s1 = asMeters 3"
   , "t1 = asSeconds 5"
@@ -167,19 +179,18 @@ exMeasure = fmap parseDecl $
   
   , "t3 = asSeconds 13"
   , "s3 = combinedSpeed * t3"
-  ]
   
-exUnion = concat $
-  [ exCategory
-  , exPair
-  , exCurry 
-  , exMap
-  , exId
-  , exFunction
-  , exLoop
-  , exSilly
-  , exPairimental
-  , exSum
+  , "r1 = v1 * t1"
+  , "r2 = t1 * v1"
+  , "t = r1 + r2"
+  , "s = r1 / r2"
   ]
-  
-example = exMeasure
+    
+    
+example = case 1 of 
+               1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
+               2 -> exControlFlow   -- ^ A whole bunch of random snippets, showing our language and program point tracking
+               3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
+               4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
+                                    -- ^   type is displayed, so intermediate results cannot be checked
+               

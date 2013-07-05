@@ -10,8 +10,6 @@ import FUN.Analyses.Utils
 
 import Prelude hiding (mapM)
 
-import Debug.Trace (traceShow)
-
 import Data.Monoid hiding ( Sum )
 
 import Control.Applicative ((<$>))
