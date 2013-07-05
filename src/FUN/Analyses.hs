@@ -39,7 +39,7 @@ prelude = if False then return (mempty, []) else
         , ("asMeters",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Meter"  )  BNil))
         , ("asDollars", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Dollar" )  BNil))
         , ("asEuros",   id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Euro"   )  BNil))
-        , ("asSeconds", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Seconds")  BNil))
+        , ("asSeconds", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Second" )  BNil))
         ]
   in do ps <- mapM (\(nm, e, f) -> do v <- fresh;
                                       return ( (nm, f v), Decl nm e)) $ predefs;
@@ -172,28 +172,16 @@ analyseAll ds =
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
                                      
                                      -- extract the scale constraints
-                                     let sc0  = extractScaleConstraints c0
+                                     let s_c0 = extractScaleConstraints $ c0
+                                         s_s0 = solveScaleConstraints   $ s_c0
                                      
-                                     -- do a first run of constraint solving
-                                     let ss1  = solveScaleConstraints sc0
-                                     let env1 = subst ss1 env
-                                     let sc1  = S.filter isValidScaleConstraint . subst ss1 $ sc0
+                                         b_c1 = extractBaseConstraints  $ subst s_s0 c0
+                                         b_s1 = solveBaseConstraints    $ b_c1
                                      
-                                     -- do a second run of constraint solving
-                                     let ss2  = solveScaleConstraints sc1
-                                     let env2 = subst (ss1 <> ss2) env
-                                     let sc2  = S.filter isValidScaleConstraint . subst ss2 $ sc1
-                                    
-                                     -- do a second run of constraint solving
-                                     let ss3  = solveScaleConstraints sc2
-                                     let env3 = subst (ss1 <> ss2 <> ss3) env
-                                     let sc3  = S.filter isValidScaleConstraint . subst ss3 $ sc2
-                                    
-                                    
-                                     -- update the final constraint set
-                                     let c2   = subst (ss1 <> ss2 <> ss3) c0
-                                     
-                                     return (env3, Prog $ (labeledLib ++ labeledDecls), c2)
+                                     return ( subst b_s1 . subst s_s0 $ env 
+                                            , Prog $ (labeledLib ++ labeledDecls)
+                                            , subst b_s1 . subst s_s0 $ c0
+                                            )
 
 -- |Runs the Algorithm W inference for types, control flow and measures.
 analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
@@ -522,12 +510,23 @@ instance Subst Env Base where
   
 instance Subst SSubst Env where
   subst s (Env p e) = Env (subst (injectSSubst s mempty) p) e
+
+instance Subst BSubst Env where
+  subst s (Env p e) = Env (subst (injectBSubst s mempty) p) e
   
 instance Subst SSubst Constraint where
   subst s = subst (injectSSubst s mempty)
 
+instance Subst BSubst Constraint where
+  subst s = subst (injectBSubst s mempty)
+
+  
 injectSSubst :: SSubst -> Env -> Env
 injectSSubst (SSubst m) e = Env (getPrimary e) ((getExtended e) { scaleMap = m })
+
+injectBSubst :: BSubst -> Env -> Env
+injectBSubst (BSubst m) e = Env (getPrimary e) ((getExtended e) { baseMap = m })
+
 
 -- * Unifications
 
