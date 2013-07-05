@@ -46,7 +46,7 @@ instance Show Scale where
   show (SMul a (SInv b))  = "(" ++ show a ++ "/" ++ show b ++ ")"
   show (SMul a b)         = "(" ++ show a ++ "*" ++ show b ++ ")"
   show (SInv a)           = "1/(" ++ show a ++ ")"
-
+   
 instance Show Base where
   show BNil     = "None"
   show (BVar v) = "[" ++ v ++ "]"
@@ -101,6 +101,34 @@ instance (Rewrite a, Ord a) => Rewrite (Set a) where
 --
 --  The simplify algorithm is called after each round of variable elimination and hopefully
 --  creates new opportunities for the next round.
+
+noInverses :: Scale -> Bool
+noInverses (SInv _) = False
+noInverses (SCon _) = True
+noInverses (SMul a b) = noInverses a && noInverses b
+noInverses _        = False
+
+isNormal :: Scale -> Bool
+isNormal s | noInverses s          = True
+isNormal         (SInv (SCon _))   = True
+isNormal (SMul a (SInv (SCon _)) ) = isNormal a 
+isNormal _                         = False
+
+isSimple :: Scale -> Bool
+isSimple (SInv (SCon a)) = True
+isSimple _               = False
+
+mergeNormal :: Scale -> Scale -> Scale
+mergeNormal SNil b                    = b
+mergeNormal a b | isSimple b          = SMul a b
+mergeNormal a b | isSimple a          = SMul b a
+
+mergeNormal a@(SCon _) b@SNil         = a
+mergeNormal a@(SCon _) b@(SCon _)     = SMul a b
+mergeNormal a@(SCon _) b@(SMul x y)   = SMul (mergeNormal a x) y
+    
+mergeNormal (SMul x y) b              = SMul (mergeNormal x b) b 
+
 instance Rewrite Scale where
   simplify (SInv SNil)          = SNil
   simplify (SInv (SInv a))      = simplify a
@@ -117,10 +145,16 @@ instance Rewrite Scale where
                                      
   simplify (SMul (SMul a (SInv b)) c) | b == c = simplify a
   simplify (SMul (SMul (SInv a) b) c) | a == c = simplify b
-
   simplify (SMul a (SMul b (SInv c))) | a == c = simplify b
   simplify (SMul a (SMul (SInv b) c)) | a == b = simplify c  
-    
+
+  simplify (SMul a b) | isNormal b && isNormal a = mergeNormal a b where
+ 
+  simplify (SMul (SMul a b) c) | isNormal c && isNormal a = SMul b (mergeNormal c a)
+  simplify (SMul (SMul a b) c) | isNormal c && isNormal b = SMul a (mergeNormal c b)
+  
+  simplify (SMul a b) = SMul (simplify a) (simplify b)  
+  
   simplify v@_                  = v
 
 iterationCount :: Int

@@ -231,7 +231,7 @@ analyseAll ds =
                                      
                                      return ( subst b_s1 . subst s_s0 $ env 
                                             , Prog $ (labeledLib ++ labeledDecls)
-                                            , simplify . simplify . simplify $ subst b_s1 . subst s_s0 $ c0
+                                            , simplify $ subst b_s1 . subst s_s0 $ c0
                                             )
 
 -- |Runs the Algorithm W inference for Types and generates constraints later used 
