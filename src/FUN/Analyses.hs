@@ -532,9 +532,16 @@ injectBSubst (BSubst m) e = Env (getPrimary e) ((getExtended e) { baseMap = m })
 u :: Type -> Type -> Analysis Env
 u TBool TBool = return $ mempty
 u (TInt r1 b1) (TInt r2 b2)
-                   = do s0 <- unifyScale r1 r2
-                        s1 <- unifyBase b1 b2
-                        return (s1 <> s0)
+                   = let s0 = case (r1, r2) of
+                                (SVar v1,       _) -> singleton (v1, r2)
+                                (_      , SVar v2) -> singleton (v2, r1)
+                                (_      ,       _) -> mempty
+                         s1 = case (b1, b2) of
+                                (BVar v1,       _) -> singleton (v1, b2)
+                                (_      , BVar v2) -> singleton (v2, b1)
+                                (_      ,       _) -> mempty
+                                
+                     in return (s1 <> s0)
 u (TArr (FVar p1) a1 b1) (TArr p2 a2 b2)
                   = do let s0 = singleton (p1, p2)
                        s1 <- subst s0 a1 `u` subst s0 a2
@@ -568,44 +575,8 @@ u t1 t2           = throwError (CannotUnify t1 t2)
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: TVar -> Type -> Bool
-occurs n t = n `elem` (ftv t)
-
-preserveTypeSystem :: Bool
-preserveTypeSystem = True
-
-unifyScale :: Scale -> Scale -> Analysis Env
-unifyScale s1 s2 =
-  case (s1, s2) of
-    (SVar v1, SVar v2) -> return $ singleton (v1, s2)
-    (SVar v1,       _) -> return $ singleton (v1, s2)
-    (_      , SVar v2) -> return $ singleton (v2, s1)
-    (_      ,       _) ->
-      if s1 == s2
-         then return $ mempty
-              -- Should be made a warning if we don't want the analysis to
-              -- reject programs that are valid according to the underlying
-              -- type system.
-         else if preserveTypeSystem
-                 then return $ mempty
-                 else throwError $ MeasureError $ "incompatible scales used: " ++ show s1 ++ " vs. " ++ show s2
-
-
-unifyBase :: Base -> Base -> Analysis Env
-unifyBase b1 b2 =
-  case (b1, b2) of
-    (BVar v1, BVar v2) -> return $ singleton (v1, b2)
-    (BVar v1,       _) -> return $ singleton (v1, b2)
-    (_      , BVar v2) -> return $ singleton (v2, b1)
-    (_      ,       _) ->
-      if b1 == b2
-         then return $ mempty
-              -- Should be made a warning if we don't want the analysis to
-              -- reject programs that are valid in the underlying
-              -- type system.
-         else if preserveTypeSystem
-                 then return $ mempty
-                 else throwError $ MeasureError $ "incompatible bases used: " ++ show b1 ++ " vs. " ++ show b2
-
+occurs n t = n `elem` (ftv t)   
+ 
 -- * Singleton Constructors
 
 instance Singleton Env (TVar, Type) where
