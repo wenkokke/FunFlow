@@ -13,19 +13,30 @@ import FUN.Analyses.Utils
 import Prelude hiding (mapM)
 
 import Data.Monoid hiding ( Sum )
+import Data.Functor ((<$>))
 
-import Control.Applicative ((<$>))
-import Control.Monad (join, foldM)
-import Control.Monad.Error (Error (..),ErrorT,runErrorT,throwError)
-import Control.Monad.Supply (Supply, SupplyT, supply, evalSupply, evalSupplyT)
+import Control.Monad (foldM)
+import Control.Monad.Error 
+  ( Error (..)
+  , ErrorT
+  , runErrorT, throwError
+  )
+  
+import Control.Monad.Supply 
+  ( Supply, SupplyT
+  , supply, evalSupply, evalSupplyT
+  )
+  
 import Control.Monad.Trans (lift)
+
+import Data.Traversable (forM,mapM)
+
 
 import Data.Map (Map)
 import Data.Set ( Set, empty, union )
 import qualified Data.Map  as M
 import qualified Data.Set  as S
 import qualified Data.List as L (union)
-import Data.Traversable (forM,mapM)
 
 import Text.Printf (printf)
 

@@ -4,6 +4,7 @@ module FUN.Labeling where
 
 import FUN.Base
 import FUN.Analyses.Flow
+
 import Control.Monad.Supply
 
 

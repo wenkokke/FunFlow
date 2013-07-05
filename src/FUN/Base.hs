@@ -2,10 +2,13 @@
 
 module FUN.Base where
 
-import Prelude hiding (abs)
-import Text.Printf (printf)
 import FUN.Analyses.Flow (Label)
 import FUN.Analyses.Measure (Scale (SNil), Base (BNil))
+
+
+import Prelude hiding (abs)
+
+import Text.Printf (printf)
 
 -- * Abstract syntax tree for the FUN language
 

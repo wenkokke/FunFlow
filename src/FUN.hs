@@ -7,34 +7,31 @@ module FUN
   , main
   ) where
 
-import FUN.Base     -- ^ abstract syntax tree
-import FUN.Parsing  -- ^ parser
-import FUN.Labeling -- ^ labeling
+import FUN.Base      -- ^ Abstract syntax tree
+import FUN.Parsing   -- ^ Parser
+import FUN.Labeling  -- ^ Labeling
 import FUN.Analyses 
-  ( analyseAll, prelude, TypeError, Env, Constraint, showType, getPrimary, getExtended
-  , extractFlowConstraints, extractScaleConstraints, extractBaseConstraints
-  , TVar (..), Type (..), printProgram
+  ( analyseAll, printProgram
+  , Env, Constraint
+  , getPrimary, getExtended
+  , extractFlowConstraints
+  , extractScaleConstraints
+  , extractBaseConstraints
   )
 import FUN.Analyses.Flow
-  ( printFlowInformation, solveFlowConstraints )
+  ( printFlowInformation 
+  , solveFlowConstraints
+  )
 import FUN.Analyses.Measure
-  ( printScaleInformation, printBaseInformation )
+  ( printScaleInformation 
+  , printBaseInformation 
+  )
 
-import Text.Printf (printf)
-
-import Data.Map (Map)
 import Data.Set (Set)
-
-import qualified Data.Set as S
-import qualified Data.Map as M
-
-import Text.ParserCombinators.UU.Utils (runParser)
-    
+  
 main :: IO ()
 main = 
-  let annotations = True
-      
-      prog = example
+  let annotations = True -- ^ Show annotations on Types/Terms
         
       showResult :: (Env, Prog, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
@@ -49,7 +46,7 @@ main =
                               ++ flowInfo    ++ "\n\n"
                               ++ scaleInfo   ++ "\n\n"
                               ++ baseInfo    ++ "\n\n"
-  in either print (putStrLn . showResult) . analyseAll $ prog
+  in either print (putStrLn . showResult) . analyseAll $ example
 
 -- * Example code
   

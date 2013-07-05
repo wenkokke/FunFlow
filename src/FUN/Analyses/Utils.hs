@@ -7,8 +7,9 @@ module FUN.Analyses.Utils where
 import Control.Applicative
 
 import Data.Map (Map)
-import qualified Data.Map as M
 import Data.Set (Set)
+
+import qualified Data.Map as M
 import qualified Data.Set as S
 
 -- * Substitutions

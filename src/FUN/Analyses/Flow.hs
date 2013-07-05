@@ -9,12 +9,14 @@ module FUN.Analyses.Flow where
 import FUN.Analyses.Utils
 
 import Data.Monoid
-import Data.Map (Map)
+
 import qualified Data.Map as M
-import Data.Set (Set,union)
 import qualified Data.Set as S
 
--- * Flow Variables
+import Data.Map (Map)
+import Data.Set (Set, union)
+
+-- | Flow Variables
 type FVar = String
 
 -- | Program points.

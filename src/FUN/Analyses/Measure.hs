@@ -18,8 +18,6 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Foldable as F
 
-import Text.Printf (printf)
-
 type SVar = String
 type SCon = String
 type BVar = String
