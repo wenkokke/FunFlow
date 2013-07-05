@@ -6,13 +6,13 @@ module FUN.Analyses.Measure where
 
 import FUN.Analyses.Utils
 
-import Debug.Trace
-
-import Data.Monoid
-import Data.Map (Map)
 import Data.Functor
-import qualified Data.Map as M
+import Data.Monoid
+
+import Data.Map (Map)
 import Data.Set (Set)
+
+import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Foldable as F
 
@@ -65,6 +65,7 @@ data BaseConstraint
   | BaseSelection (Base, Base) Base
   deriving (Eq, Ord)
     
+-- |Print the semantics of the corresponding constraint. 
 instance Show BaseConstraint where
   show (BaseEquality bs)
     = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . map show . S.toList $ bs) 
@@ -85,6 +86,14 @@ class Rewrite s where
 instance Rewrite SSubst where
   rewrite (SSubst r) = SSubst $ M.map rewrite r
     
+    
+-- |Recursively rewrite Scale expression in an attempt to put them in a normal form. Apart
+--  from the obvious cancelations, this algorithm tries to move inverses outwards and re-
+--  associates multiplication to the right. Inverses drift towards the right. The idea
+--  is that this makes it easier for a future algorithm to perform non-local simplifications
+--
+--  The rewrite algorithm is called after each round of variable elimination and hopefully
+--  creates new opportunities for the next round.
 instance Rewrite Scale where
   rewrite (SInv SNil)          = SNil
   rewrite (SInv (SInv a))      = rewrite a
@@ -114,7 +123,13 @@ instance Rewrite Scale where
   rewrite v@_                  = v
 
 
-
+-- |Try to find a substitution that unifies as many Scale constraints as possible.
+--  All constraints are equality constraints, and the @solveBaseEquality phase is
+--  idempotent. Unfortunately, due to non-linear nesting, not all constraints can
+--  be handled in this way. Equality solving is done in different rounds, each 
+--  round ending with a rewrite phase that tries to mend the Scale constraints
+--  into a normal form. Because this no normal form is guaranteed to be reached,
+--  there is a hard coded limit on how rounds to try.
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
 solveScaleConstraints c = loop 8 mempty where  
   loop 0 s0 = s0
@@ -126,6 +141,9 @@ solveScaleConstraints c = loop 8 mempty where
 
   c0 = unionMap filterEquality $ c
 
+  
+-- |Iteratively reduce equality constraints until no more reductions are possible.
+-- |First
 solveScaleEquality:: Set (Set Scale) -> SSubst
 solveScaleEquality = loop mempty where
   loop s0 c0 =
@@ -140,24 +158,34 @@ solveScaleEquality = loop mempty where
     cons = getSCons list
     vars = getSVars list
     
+    -- |If there is precisely one definite Scale, take it and unify 
+    --  all Scale variables with it. If there are no definite scales
+    --  in the equality constraint, try to take a Scale variable and
+    --  unify all other variables with it. If there are two or more
+    --  definite Scales known then no further unification is possible
+    --  at this point.
     single [     ] = SVar <$> maybeHead vars
     single [  x  ] = Just $ x
     single (x:y:_) = Nothing
     
+    -- |If one unification step is found, apply it to all Scale variables.
     withSingle (Just  x) = foldr (\v m -> m <> singleton (v,x)) mempty vars
     withSingle (Nothing) = mempty
     
+  -- |A list of all definite Scales in this Eq constraint
   getSCons = filter isSCon where
     isSCon  (SNil    ) = True
     isSCon  (SCon _  ) = True
     isSCon  (SInv a  ) = isSCon a
     isSCon  (SMul a b) = isSCon a && isSCon b
     isSCon  (SVar _  ) = False
-    
+
+  -- |A list of all Scale variables in this eq constraint
   getSVars = concatMap $ \t ->
     case t of SVar v -> [v]
               _      -> [ ]
        
+-- |Solve Base constraints. The equality case is the same as in the Scale case.
 solveBaseConstraints :: Set BaseConstraint -> BSubst
 solveBaseConstraints c0 = loop mempty where
   loop s0 = 
@@ -186,6 +214,7 @@ solveBaseConstraints c0 = loop mempty where
   filterPreservation (BasePreservation (x, y) z) = singleton (x, y, z)
   filterPreservation _                           = S.empty
 
+-- |Constraints added by addition of two variables  
 solveBaseSelection :: Set (Base, Base, Base) -> BSubst
 solveBaseSelection = F.foldMap solver where
   solver (x, y, BVar z) = if x == BNil
@@ -202,7 +231,8 @@ solveBaseSelection = F.foldMap solver where
                           (BVar a, b) -> singleton (a, b)
                           (a, BVar b) -> singleton (b, a)
                           (_,      _) -> mempty        
-                          
+
+-- |Constraints added by subtraction of two variables  
 solveBasePreservation :: Set (Base, Base, Base) -> BSubst
 solveBasePreservation = F.foldMap solver where
   solver (x, y, BVar z) = if y == BNil
@@ -216,6 +246,7 @@ solveBasePreservation = F.foldMap solver where
                           (a, BVar b) -> singleton (b, a)
                           (_,      _) -> mempty        
 
+-- |See @solveScaleEquality for details
 solveBaseEquality:: Set (Set Base) -> BSubst
 solveBaseEquality = loop mempty where
   loop s0 c0 =
@@ -246,7 +277,7 @@ solveBaseEquality = loop mempty where
     case t of BVar v -> [v]
               _      -> [ ]
 
-
+              
 printScaleInformation :: Set ScaleConstraint -> String
 printScaleInformation m =
   let prefix = "{\n"
@@ -301,8 +332,8 @@ instance (Subst e Base) => Subst e BaseConstraint where
   subst m (BasePreservation (x, y) z) = BasePreservation (subst m x, subst m y) (subst m z)
   subst m (BaseSelection (x, y) z)    = BaseSelection (subst m x, subst m y) (subst m z)
 
-newtype BSubst = BSubst
-  { getBSubst :: Map BVar Base
+newtype BSubst = BSubst { 
+  getBSubst :: Map BVar Base
   } deriving (Eq, Ord, Show)
 
 instance Subst BSubst Base where

@@ -4,10 +4,15 @@ import FUN.Base
 import FUN.Analyses.Flow
 import Control.Monad.Supply
 
+
+-- |Declare a type labelable by specifying where to put the labels. @runLabel 
+--  takes a (possibly) unlabeled term, runs a label algorithm and then returns
+--  the now labeled term.
 class Labelable a where
   label :: a -> Supply Label a
-  runLabel :: a -> a
-  runLabel a = evalSupply (label a) (fmap (:[]) ['A'..'Z'] ++ fmap show [0..]) 
+
+runLabel :: Labelable a => a -> a
+runLabel a = evalSupply (label a) (fmap (:[]) ['A'..'Z'] ++ fmap show [0..]) 
 
 instance (Labelable a) => (Labelable [a]) where
   label = mapM label
@@ -21,6 +26,10 @@ instance Labelable Prog where
 instance Labelable Decl where
   label (Decl n e) = do e <- label e; return (Decl n e)
 
+  
+-- |Label expressions. Only lamda abstractions and binary sums/products have 
+--  labels on them. These are just to track their creation in Control Flow 
+--  Analysis.
 instance Labelable Expr where
   label l@(Lit _)         = return l
   label v@(Var _)         = return v

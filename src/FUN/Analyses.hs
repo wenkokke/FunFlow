@@ -19,20 +19,24 @@ import Control.Monad.Supply (Supply, SupplyT, supply, evalSupply, evalSupplyT)
 import Control.Monad.Trans (lift)
 
 import Data.Map (Map)
-import qualified Data.Map as M
 import Data.Set ( Set, empty, union )
-import qualified Data.Set as S
+import qualified Data.Map  as M
+import qualified Data.Set  as S
 import qualified Data.List as L (union)
 import Data.Traversable (forM,mapM)
 
 import Text.Printf (printf)
 
+-- |Collection of built-in functions available to all programs. At the time of writing, these
+--  all serve to introduce (the by default) unitless integers to the world of typed units of
+--  measure. The measure analysis makes sure all measure annotations properly propagate through
+--  the program.
 prelude :: Analysis (Env, [Decl])
-prelude = if False then return (mempty, []) else
+prelude = 
   let id = Abs noLabel "x" (Var "x")
       predefs =
         [ ("asKelvin",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" )  BNil))
-        , ("asCelcius", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" ) (BCon "Freezing")))
+        , ("asCelcius", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Kelvin" )  (BCon "Freezing")))
         , ("asFeet",    id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Feet"   )  BNil))
         , ("asMeters",  id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Meter"  )  BNil))
         , ("asDollars", id, \v -> TArr v (TInt SNil BNil) (TInt (SCon "Dollar" )  BNil))
@@ -49,12 +53,15 @@ prelude = if False then return (mempty, []) else
 -- |Type variables
 type TVar = String
 
+-- |Representation for inferred types in our functional language. The Flow field
+--  holds flow variables to which Control Flow Constraints are attached during the
+--  execution of W. 
 data Type
   = TVar  TVar
   | TBool
   | TInt  Scale Base
-  | TArr  Flow Type Type
-  | TProd Flow Name Type Type
+  | TArr  Flow Type Type        -- Function Arrow
+  | TProd Flow Name Type Type   -- 
   | TSum  Flow Name Type Type
   | TUnit Flow Name
   deriving (Eq)
@@ -62,6 +69,8 @@ data Type
 instance Show Type where
   show = showType False
 
+-- |Pretty print a given type. The boolean parameter tells weither to print type 
+--  annotations (when True) or not (when False). 
 showType :: Bool -> Type -> String
 showType cp =
   let printAnn (FVar s) = if cp then "{" ++ s ++ "}" else ""
@@ -103,7 +112,7 @@ ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
 ftv (TUnit _ _)     = [ ]
 
--- |Types of primitives.
+-- |Extract the type from primitive literals
 typeOf :: Lit -> Type
 typeOf (Bool _) = TBool
 typeOf (Integer s b _) = TInt s b
@@ -116,7 +125,6 @@ data TypeError
   | OccursCheck     TVar Type -- ^ thrown when occurs check in unify fails
   | CannotUnify     Type Type -- ^ thrown when types cannot be unified
   | OtherError      String    -- ^ stores miscellaneous errors
-  | MeasureError    String
   deriving Eq
 
 instance Error TypeError where
@@ -130,10 +138,18 @@ instance Show TypeError where
   show (OccursCheck    n t) = printf "Occurs check fails: %s occurs in %s" n (show t)
   show (CannotUnify    a b) = printf "Cannot unify %s with %s" (show a) (show b)
   show (OtherError     msg) = msg
-  show (MeasureError     s) = "Unit of Measure Error: " ++ s
 
+-- |The Analysis monad, the main datatype used by our implementation of W. The various
+--  monads have the following purposes:
+--
+--  ErrorT: this transformer is used for error reporting
+--  SupplyT: this transformer threads a supply of fresh annotation variables. The supply
+--           is shared by the various analyses.
+--  Supply: thread a supply of fresh type variables
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
+
+-- | `(x ~> t) env` can be read as 'rewrite variable `x` to type `t` in the environment `env`
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(Env m w) -> Env (M.insert x t m) w
 
@@ -540,7 +556,6 @@ u (TInt r1 b1) (TInt r2 b2)
                                 (BVar v1,       _) -> singleton (v1, b2)
                                 (_      , BVar v2) -> singleton (v2, b1)
                                 (_      ,       _) -> mempty
-                                
                      in return (s1 <> s0)
 u (TArr (FVar p1) a1 b1) (TArr p2 a2 b2)
                   = do let s0 = singleton (p1, p2)
