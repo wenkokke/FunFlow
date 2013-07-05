@@ -1,3 +1,5 @@
+-- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+
 module FUN
   ( module FUN.Base
   , module FUN.Parsing
@@ -11,7 +13,7 @@ import FUN.Labeling -- ^ labeling
 import FUN.Analyses 
   ( analyseAll, prelude, TypeError, Env, Constraint, showType, getPrimary, getExtended
   , extractFlowConstraints, extractScaleConstraints, extractBaseConstraints
-  , TVar (..), Type (..)
+  , TVar (..), Type (..), printProgram
   )
 import FUN.Analyses.Flow
   ( printFlowInformation, solveFlowConstraints )
@@ -21,47 +23,21 @@ import FUN.Analyses.Measure
 import Text.Printf (printf)
 
 import Data.Map (Map)
-import qualified Data.Map as M
 import Data.Set (Set)
+
 import qualified Data.Set as S
+import qualified Data.Map as M
 
 import Text.ParserCombinators.UU.Utils (runParser)
-
--- * Top-Level Parsers
-
-parseProg :: String -> Prog
-parseProg = runParser "stdin" pProg
-
-parseDecl :: String -> Decl
-parseDecl = runParser "stdin" pDecl
-
-parseExpr :: String -> Expr
-parseExpr = runParser "stdin" pExpr
-
--- * Example code
-
-printProgram :: Prog -> Env -> String
-printProgram (Prog p) env = 
-  let funcType (Decl nm e) = case M.lookup nm (getPrimary env) of
-                               Just r  -> nm ++ " :: " ++ (showType annotations r)
-                               Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
-      funcBody = showDecl annotations
-      prefix = "{\n"
-      suffix = "}"
-      
-      printer x xs = "  " ++ funcType x ++ "\n  " ++ funcBody x ++ "\n\n" ++ xs 
-      
-  in prefix ++ foldr printer "" p ++ suffix
-  
-annotations :: Bool
-annotations = True
-  
+    
 main :: IO ()
 main = 
-  let prog = example
+  let annotations = True
+      
+      prog = example
         
       showResult :: (Env, Prog, Set Constraint) -> String
-      showResult (m, p, w) =  let programInfo = "program = " ++ printProgram p m
+      showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
                                   flowInfo  = "control flow = "
                                     ++ (printFlowInformation . solveFlowConstraints . extractFlowConstraints $ w)
                                   scaleInfo  = "scale constraints = "
@@ -74,7 +50,63 @@ main =
                               ++ scaleInfo   ++ "\n\n"
                               ++ baseInfo    ++ "\n\n"
   in either print (putStrLn . showResult) . analyseAll $ prog
-        
+
+-- * Example code
+  
+-- |Selected Examples to show our code in action
+example = case 1 of 
+               1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
+               2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
+               3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
+               4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
+                                    -- ^   type is displayed, so intermediate results cannot be checked
+
+exMeasure = fmap parseDecl $
+  [ "s1 = asMeters 3"
+  , "t1 = asSeconds 5"
+  , "v1 = s1 / t1"
+
+  , "s2 = asMeters 7"
+  , "t2 = asSeconds 11"
+  , "t3 = t2"
+  , "v2 = s2 / t2"
+  
+  , "combinedSpeed = v1 + v2"
+  , "averageSpeed  = combinedSpeed / 2"
+  
+  , "t3 = asSeconds 13"
+  , "s3 = combinedSpeed * t3"
+  
+  , "r1 = v1 * t1"
+  , "r2 = t1 * v1"
+  , "t = r1 + r2"
+  , "s = r1 / r2"
+  ]
+
+exLoop unfolded = fmap parseDecl $
+  if unfolded then
+  [ "fy = fun y => y"
+  , "g = fix f x => f fy"
+  , "fz = fun z => z"
+  , "test = g fz"
+  ] else
+  [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
+  ]
+   
+exEverything = concat $
+  [ exCategory
+  , exPair
+  , exCurry 
+  , exMap
+  , exId
+  , exFunction
+  , exLoop True
+  , exSilly
+  , exPairimental
+  , exSum
+  ]
+   
+   
 exCategory = fmap parseDecl $
   [ "compose f g x = f (g x)"
   , "id x = x"
@@ -87,16 +119,17 @@ exPair = fmap parseDecl $
   , "swap p = case p of Pair (x, y) -> Pair (y, x)"
   ]
 
-exCurry = fmap parseDecl $
-  [ "curry f   = fun x y => let p = Pair (x, y) in f p"
-  , "uncurry f = fun p => case p of Pair (x, y) -> f x y"
-  ]
-  
 exMap = fmap parseDecl $
   [ "mapFst f p = case p of Pair (x, y) -> Pair (f x, y)"
   , "mapSnd g p = case p of Pair (x, y) -> Pair (x, g y)"
   , "mapPair f g = compose (mapFst f) (mapSnd g)"
   ]
+  
+exCurry = fmap parseDecl $
+  [ "curry f   = fun x y => let p = Pair (x, y) in f p"
+  , "uncurry f = fun p => case p of Pair (x, y) -> f x y"
+  ]
+  
   
 exId = fmap parseDecl $
   [ "idPair p = Pair(fst p, snd p)" 
@@ -117,17 +150,6 @@ exSilly = fmap parseDecl $
   [ "silly1 p = case p of Pair(f,g) -> compose f g"
   , "silly2 p = compose (fst p) (snd p)"
   , "silly3 p x = apply (compose (fst p) (snd p)) (id x)"
-  ]
-
-  
-exLoop unfolded = fmap parseDecl $
-  if unfolded then
-  [ "fy = fun y => y"
-  , "g = fix f x => f fy"
-  , "fz = fun z => z"
-  , "test = g fz"
-  ] else
-  [ "loop = let g = fix f x => f (fun y => y) in g (fun z => z)"
   ]
   
 exPairimental = fmap parseDecl $
@@ -150,47 +172,4 @@ exSum = fmap parseDecl $
  ++ "                       Either.Right y -> false"
   ]
 
-exControlFlow = concat $
-  [ exCategory
-  , exPair
-  , exCurry 
-  , exMap
-  , exId
-  , exFunction
-  , exLoop True
-  , exSilly
-  , exPairimental
-  , exSum
-  ]
-
-  
-exMeasure = fmap parseDecl $
-  [ "s1 = asMeters 3"
-  , "t1 = asSeconds 5"
-  , "v1 = s1 / t1"
-
-  , "s2 = asMeters 7"
-  , "t2 = asSeconds 11"
-  , "t3 = t2"
-  , "v2 = s2 / t2"
-  
-  , "combinedSpeed = v1 + v2"
-  , "averageSpeed  = combinedSpeed / 2"
-  
-  , "t3 = asSeconds 13"
-  , "s3 = combinedSpeed * t3"
-  
-  , "r1 = v1 * t1"
-  , "r2 = t1 * v1"
-  , "t = r1 + r2"
-  , "s = r1 / r2"
-  ]
-    
-    
-example = case 1 of 
-               1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
-               2 -> exControlFlow   -- ^ A whole bunch of random snippets, showing our language and program point tracking
-               3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
-               4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
-                                    -- ^   type is displayed, so intermediate results cannot be checked
-               
+                   

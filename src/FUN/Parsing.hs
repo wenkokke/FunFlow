@@ -1,3 +1,5 @@
+-- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 module FUN.Parsing where
@@ -10,6 +12,18 @@ import Text.ParserCombinators.UU
 import Text.ParserCombinators.UU.Utils
 import Text.ParserCombinators.UU.Idioms (iI,Ii (..))
 import Text.ParserCombinators.UU.BasicInstances (Parser,pSym)
+
+-- * Top-Level Parsers
+
+parseProg :: String -> Prog
+parseProg = runParser "stdin" pProg
+
+parseDecl :: String -> Decl
+parseDecl = runParser "stdin" pDecl
+
+parseExpr :: String -> Expr
+parseExpr = runParser "stdin" pExpr
+
 
 -- * Parsing the FUN language
 

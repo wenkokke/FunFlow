@@ -1,3 +1,5 @@
+-- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses where
@@ -47,7 +49,21 @@ prelude =
                                       return ( (nm, f v), Decl nm e)) $ predefs;
         let (env, ds) = unzip ps;
         return (Env (M.fromList env) emptyExtendedEnv, ds)
-
+        
+printProgram :: Bool -> Prog -> Env -> String
+printProgram annotations (Prog p) env = 
+  let funcType (Decl nm e) = case M.lookup nm (getPrimary env) of
+                               Just r  -> nm ++ " :: " ++ (showType annotations r)
+                               Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
+      funcBody = showDecl annotations
+      prefix = "{\n"
+      suffix = "}"
+      
+      printer x xs = "  " ++ funcType x ++ "\n  " ++ funcBody x ++ "\n\n" ++ xs 
+      
+  in prefix ++ foldr printer "" p ++ suffix
+        
+        
 -- * Type definitions
 
 -- |Type variables
@@ -149,19 +165,20 @@ instance Show TypeError where
 type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 
 
--- | `(x ~> t) env` can be read as 'rewrite variable `x` to type `t` in the environment `env`
+-- |`(x ~> t) env` can be read as 'rewrite variable `x` to type `t` in the environment `env`
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \(Env m w) -> Env (M.insert x t m) w
 
-
 instance Monoid Env where                    
+  -- |Substitutions can be chained by first recursively substituting the left substitution
+  --  over the right environment then unioning with the left invironment
   m@(Env s2 a2) `mappend` (Env s1 a1) = Env (s2 `M.union` (subst m <$> s1)) $
                                           ExtendedEnv {
                                             flowMap  = flowMap  a2 `M.union` (subst m <$> flowMap  a1),
                                             scaleMap = scaleMap a2 `M.union` (subst m <$> scaleMap a1),
                                             baseMap  = baseMap  a2 `M.union` (subst m <$> baseMap  a1)
                                           }
-                                  
+  -- | The empty substitution, doesn't change a thing                                  
   mempty = Env M.empty emptyExtendedEnv
 
 -- * Algorithm W for Type Inference
@@ -185,7 +202,6 @@ analyseAll ds =
 
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
                                      
-                                     -- extract the scale constraints
                                      let s_c0 = extractScaleConstraints $ c0
                                          s_s0 = solveScaleConstraints   $ s_c0
                                      
@@ -197,7 +213,8 @@ analyseAll ds =
                                             , subst b_s1 . subst s_s0 $ c0
                                             )
 
--- |Runs the Algorithm W inference for types, control flow and measures.
+-- |Runs the Algorithm W inference for Types and generates constraints later used 
+--  by Control Flow analysis and Measure Analysis.
 analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)
 analyse exp env = case exp of
   Lit l           -> return ( typeOf l
@@ -285,7 +302,8 @@ analyse exp env = case exp of
                                       , mempty
                                       , flowConstraint nm b_0 pi
                                       )
-  -- * adding product types
+  -- * Product types
+  
   Con pi nm (Prod x y)   -> do (t1, s1, c1) <- analyse x $ env
                                (t2, s2, c2) <- analyse y . subst s1 $ env
 
@@ -296,7 +314,8 @@ analyse exp env = case exp of
                                       , subst s2 c1 `union`
                                                  c1 `union` flowConstraint nm b_0 pi
                                       )
-  -- * adding sum types
+  -- * Sum types
+  
   Con pi nm (Sum L t)   -> do (t1, s1, c1) <- analyse t $ env
                               t2 <- fresh
 
@@ -316,6 +335,9 @@ analyse exp env = case exp of
                                       , c1 `union` flowConstraint (nm ++ ".Right") b_0 pi
                                       )
 
+  -- * Destructing types
+                                      
+                                      
   Des nm e1 (UnUnit e2)     -> do (t1, s1, c1) <- analyse e1 $ env
 
                                   b_0 <- fresh
@@ -365,6 +387,9 @@ analyse exp env = case exp of
                                                        subst  s5                    c4
                                                      )
 
+                                                     
+  -- * Binary operators
+                                                     
   Oper op x y -> do rx <- fresh
                     bx <- fresh
 
@@ -444,31 +469,40 @@ data Constraint
   | BaseConstraint  BaseConstraint
     deriving (Eq, Ord, Show)
 
+-- |Construct a Scale resp. Base Equality Constraint from a list of Scale resp. Base annotations. All 
+--  annotations in the list will be unified post-W
 scaleEquality :: [Scale] -> Set Constraint
 scaleEquality = S.singleton . ScaleConstraint . ScaleEquality . S.fromList
 
+-- |Construct a Base Equality Constraint from a list of Bases all deemed equal.
 baseEquality :: [Base] -> Set Constraint
 baseEquality = S.singleton . BaseConstraint . BaseEquality . S.fromList
 
+-- |Constraint generated by the addition of two measures
 selectBase :: (Base, Base) -> Base -> Set Constraint
 selectBase xy z = S.singleton $ BaseConstraint $ BaseSelection xy z
 
-flowConstraint :: String -> Flow -> Label -> Set Constraint
-flowConstraint nm a l = singleton $ FlowConstraint $ Flow nm a l
-
+-- |Constraint generated by the subtraction of two measures
 preserveBase :: (Base, Base) -> Base -> Set Constraint
 preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z
 
+-- |Constraint generated by the construction of a program point 
+flowConstraint :: String -> Flow -> Label -> Set Constraint
+flowConstraint nm a l = singleton $ FlowConstraint $ Flow nm a l
+
+-- |Seperate the Flow Constrains from the rest of the Constraint set
 extractFlowConstraints :: Set Constraint -> Set FlowConstraint
 extractFlowConstraints = unionMap findFlows where
   findFlows (FlowConstraint r)      = S.singleton r
   findFlows _                       = S.empty
 
+-- |Seperate the Scale Constrains from the rest of the Constraint set
 extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
 extractScaleConstraints = unionMap findScales where
     findScales (ScaleConstraint ss) = S.singleton ss
     findScales _                    = S.empty
 
+-- |Seperate the Base Constrains from the rest of the Constraint set
 extractBaseConstraints :: Set Constraint -> Set BaseConstraint
 extractBaseConstraints = unionMap findBases where
   findBases (BaseConstraint bs) = S.singleton bs
@@ -477,8 +511,8 @@ extractBaseConstraints = unionMap findBases where
 -- * Environments
 
 data Env = Env
-  { getPrimary  :: (Map TVar Type)
-  , getExtended :: ExtendedEnv
+  { getPrimary  :: (Map TVar Type) -- ^ Type substitutions used in W
+  , getExtended :: ExtendedEnv     -- ^ Extended substitions, used by Flow and Measure analysis
   }
 
 data ExtendedEnv = ExtendedEnv
@@ -545,13 +579,16 @@ injectBSubst (BSubst m) e = Env (getPrimary e) ((getExtended e) { baseMap = m })
 -- * Unifications
 
 -- |Unification as per Robinson's unification algorithm.
+
 u :: Type -> Type -> Analysis Env
 u TBool TBool = return $ mempty
 u (TInt r1 b1) (TInt r2 b2)
                    = let s0 = case (r1, r2) of
                                 (SVar v1,       _) -> singleton (v1, r2)
                                 (_      , SVar v2) -> singleton (v2, r1)
-                                (_      ,       _) -> mempty
+                                (_      ,       _) -> mempty -- ^ shouldn't occur in the natural order of things
+                                                            
+                                
                          s1 = case (b1, b2) of
                                 (BVar v1,       _) -> singleton (v1, b2)
                                 (_      , BVar v2) -> singleton (v2, b1)

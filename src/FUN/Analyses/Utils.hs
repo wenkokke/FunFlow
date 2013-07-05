@@ -1,3 +1,5 @@
+-- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module FUN.Analyses.Utils where

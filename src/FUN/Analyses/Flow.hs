@@ -1,3 +1,5 @@
+-- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}

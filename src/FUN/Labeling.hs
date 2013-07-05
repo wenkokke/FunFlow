@@ -1,3 +1,5 @@
+-- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+
 module FUN.Labeling where
 
 import FUN.Base
