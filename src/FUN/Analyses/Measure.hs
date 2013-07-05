@@ -122,7 +122,9 @@ instance Rewrite Scale where
  
   rewrite v@_                  = v
 
-
+iterationCount :: Int
+iterationCount = 16
+  
 -- |Try to find a substitution that unifies as many Scale constraints as possible.
 --  All constraints are equality constraints, and the @solveBaseEquality phase is
 --  idempotent. Unfortunately, due to non-linear nesting, not all constraints can
@@ -131,7 +133,7 @@ instance Rewrite Scale where
 --  into a normal form. Because this no normal form is guaranteed to be reached,
 --  there is a hard coded limit on how rounds to try.
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints c = loop 8 mempty where  
+solveScaleConstraints c = loop iterationCount mempty where  
   loop 0 s0 = s0
   loop n s0 = 
     let s1 = solveScaleEquality $ subst s0 c0
@@ -145,12 +147,13 @@ solveScaleConstraints c = loop 8 mempty where
 -- |Iteratively reduce equality constraints until no more reductions are possible.
 -- |First
 solveScaleEquality:: Set (Set Scale) -> SSubst
-solveScaleEquality = loop mempty where
-  loop s0 c0 =
+solveScaleEquality = loop iterationCount mempty where
+  loop 0 s0 _  = s0
+  loop n s0 c0 =
     let s1 = F.foldMap solveCons c0
     in if s1 == mempty
           then s0
-          else loop (s1 <> s0) (subst s1 c0)
+          else loop (n-1) (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
     list = S.toList cs
@@ -187,8 +190,9 @@ solveScaleEquality = loop mempty where
        
 -- |Solve Base constraints. The equality case is the same as in the Scale case.
 solveBaseConstraints :: Set BaseConstraint -> BSubst
-solveBaseConstraints c0 = loop mempty where
-  loop s0 = 
+solveBaseConstraints c0 = loop iterationCount mempty where
+  loop 0 s0 = s0
+  loop n s0 = 
     let c1 = subst s0 . unionMap filterEquality $ c0
         s1 = solveBaseEquality $ c1
       
@@ -202,7 +206,7 @@ solveBaseConstraints c0 = loop mempty where
           s2 == mempty &&
           s3 == mempty
           then s0
-          else loop (s3 <> s2 <> s1 <> s0)
+          else loop (n-1) (s3 <> s2 <> s1 <> s0)
 
       
   filterEquality  (BaseEquality gr) = singleton gr
@@ -248,12 +252,13 @@ solveBasePreservation = F.foldMap solver where
 
 -- |See @solveScaleEquality for details
 solveBaseEquality:: Set (Set Base) -> BSubst
-solveBaseEquality = loop mempty where
-  loop s0 c0 =
+solveBaseEquality = loop iterationCount mempty where
+  loop 0 s0 _  = s0
+  loop n s0 c0 =
     let s1 = F.foldMap solveCons $ subst s0 c0
     in if s1 == mempty
           then s0
-          else loop (s1 <> s0) (subst s1 c0)
+          else loop (n-1) (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
     list = S.toList cs

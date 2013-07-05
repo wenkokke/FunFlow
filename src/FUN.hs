@@ -29,9 +29,15 @@ import FUN.Analyses.Measure
 
 import Data.Set (Set)
   
+  
+-- |Runs the analysis on the example program code below. The results `scale constraints` and `base constraints`
+--  print all the generated constraints with their annotation variables replaced with concrete annotations.
+--  If everything goes well, all annotation variables have been closed and then the results under `program`  
+--  are much more interesting. However, if constraint solving does get stuck, these sections give valuable 
+--  information on the relation between the annotations that did get solved.
 main :: IO ()
 main = 
-  let annotations = True -- ^ Show annotations on Types/Terms
+  let annotations = True -- ^ Show annotations on Types/Terms. Makes the resulting types very verbose.
         
       showResult :: (Env, Prog, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
@@ -52,11 +58,11 @@ main =
   
 -- |Selected Examples to show our code in action
 example = case 1 of 
-               1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
-               2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
-               3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
-               4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
-                                    -- ^   type is displayed, so intermediate results cannot be checked
+            1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
+            2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
+            3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
+            4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
+                                  -- ^   type is displayed, so intermediate results cannot be checked
 
 exMeasure = fmap parseDecl $
   [ "s1 = asMeters 3"
@@ -78,6 +84,8 @@ exMeasure = fmap parseDecl $
   , "r2 = t1 * v1"
   , "t = r1 + r2"
   , "s = r1 / r2"
+ 
+  , "doCalc s t = (s / t) * (asMeters 5 / asMeters 3)"
   ]
 
 exLoop unfolded = fmap parseDecl $
