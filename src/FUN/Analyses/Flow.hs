@@ -72,7 +72,7 @@ solveFlowConstraints =
      . L.map (\(Flow nm (FVar f) l) -> (f, (nm, l)) ) 
      . S.toList 
     
-instance Information FlowConstraint FSubst where
+instance Solver FlowConstraint FSubst where
   solveConstraints = solveFlowConstraints
     
 -- |Pretty print the Annotated Type Variable -> Program Point Set map.

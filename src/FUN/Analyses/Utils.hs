@@ -12,10 +12,13 @@ import Data.Set (Set)
 import qualified Data.Map as M
 import qualified Data.Set as S
 
--- * Substitutions
+-- * Constraint Solving
 
-class Information c s | c -> s where
+class Solver c s | c -> s where
   solveConstraints :: Set c -> (s, Set c)
+
+  
+-- * Substitutions
 
 class Subst e w where
   subst :: e -> w -> w

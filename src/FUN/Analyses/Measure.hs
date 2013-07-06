@@ -255,7 +255,7 @@ solveScaleConstraints = wrap (loop 8 mempty)  where
   filterEquality (ScaleEquality gr) = singleton gr  
   wrap f = fmap (S.map ScaleEquality) . f . unionMap filterEquality 
  
-instance Information ScaleConstraint SSubst where
+instance Solver ScaleConstraint SSubst where
   solveConstraints = solveScaleConstraints
 
   
@@ -336,7 +336,7 @@ solveBaseConstraints = loop iterationCount mempty where
   filterPreservation _                           = S.empty
 
 
-instance Information BaseConstraint BSubst where
+instance Solver BaseConstraint BSubst where
   solveConstraints = solveBaseConstraints
 
   
