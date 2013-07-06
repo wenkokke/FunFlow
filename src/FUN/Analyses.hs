@@ -200,10 +200,7 @@ instance Monoid Env where
 instance Rewrite Constraint where
   simplify (ScaleConstraint ss) = ScaleConstraint $ simplify ss
   simplify v@_ = v
-   
-instance Rewrite ScaleConstraint where
-  simplify (ScaleEquality s) = ScaleEquality $ simplify s
-  
+     
 -- |Runs Algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
 analyseAll :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
@@ -223,15 +220,15 @@ analyseAll ds =
 
                                      (env, c0) <- foldM addDecl (env, empty) $ labeledDecls
                                      
-                                     let s_c0 = extractScaleConstraints $ c0
-                                         s_s0 = solveScaleConstraints   $ s_c0
+                                     let (s_s1, s_c1) = solveScaleConstraints . extractScaleConstraints $ c0
+                                         c1 = S.map ScaleConstraint s_c1     
                                      
-                                         b_c1 = extractBaseConstraints  $ subst s_s0 c0
-                                         b_s1 = solveBaseConstraints    $ b_c1
+                                         (b_s2, b_c2) = solveBaseConstraints  . extractBaseConstraints  $ subst s_s1 c0
+                                         c2 = S.map BaseConstraint b_c2
                                      
-                                     return ( subst b_s1 . subst s_s0 $ env 
+                                     return ( subst b_s2 . subst s_s1 $ env 
                                             , Prog $ (labeledLib ++ labeledDecls)
-                                            , simplify $ subst b_s1 . subst s_s0 $ c0
+                                            , simplify $ c1 `union` c2
                                             )
 
 -- |Runs the Algorithm W inference for Types and generates constraints later used 

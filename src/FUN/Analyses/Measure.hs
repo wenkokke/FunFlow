@@ -17,6 +17,8 @@ import Data.List
 import Data.Map (Map)
 import Data.Set (Set)
 
+import Control.Applicative
+
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Foldable as F
@@ -86,6 +88,9 @@ instance Show BaseConstraint where
 class Rewrite s where
   simplify :: s -> s
     
+instance Rewrite ScaleConstraint where
+  simplify (ScaleEquality ss) = ScaleEquality $ simplify ss 
+    
 instance Rewrite SSubst where
   simplify (SSubst r) = SSubst $ M.map simplify r
 
@@ -152,6 +157,8 @@ normalizedInsert a@(SInv (SVar _)) b =
 
 normalizedInsert a@(SMul x y) b = normalizedInsert y (normalizedInsert x b)
 normalizedInsert s@_ _ = error $ "Magic: " ++ show s
+
+normalize t = normalizedInsert t SNil
 
 scaleToList :: Scale -> [Scale]
 scaleToList SNil = []
@@ -231,28 +238,32 @@ iterationCount = 16
 --  round ending with a simplify phase that tries to mend the Scale constraints
 --  into a normal form. Because this no normal form is guaranteed to be reached,
 --  there is a hard coded limit on how rounds to try.
-solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints = loop 8 mempty . unionMap filterEquality where  
-  loop 0 s0 _ = s0
+solveScaleConstraints :: Set ScaleConstraint -> (SSubst, Set ScaleConstraint)
+solveScaleConstraints = wrap (loop 8 mempty)  where   
+  loop 0 s0 c0 = (s0, c0)
   loop n s0 c0 = 
-    let s1 = solveScaleEquality $ c0
+    let (s1, c1) = solveScaleEquality $ c0
         
-        reducer 0 = id
-        reducer n = reducer (n-1) . simplify
-        
-    in loop (n-1) (reducer 3 $ s1 <> s0) (reducer 3 $ subst s1 c0)
+  
+    in loop (n-1) (reducer $ s1 <> s0) (reducer c1)
 
+  reducer :: Rewrite a => a -> a
+  reducer = go 3 where
+    go 0 = id
+    go n = go (n-1) . simplify
+    
   filterEquality (ScaleEquality gr) = singleton gr  
-
+  wrap f = fmap (S.map ScaleEquality) . f . unionMap filterEquality 
+ 
   
 -- |Iteratively reduce equality constraints until no more reductions are possible.
 -- |First
-solveScaleEquality:: Set (Set Scale) -> SSubst
+solveScaleEquality:: Set (Set Scale) -> (SSubst, Set (Set Scale))
 solveScaleEquality = loop mempty where
   loop s0 c0 =
     let s1 = F.foldMap solveCons c0
     in if s1 == mempty
-          then s0
+          then (s0, c0)
           else loop (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
@@ -267,12 +278,12 @@ solveScaleEquality = loop mempty where
     --  unify all other variables with it. If there are two or more
     --  definite Scales known then no further unification is possible
     --  at this point.
-    single [     ] = case vars of
+    single [ ] = case vars of
                        [ ] -> Nothing
                        [x] -> Nothing
                        (x:y:xs) -> Just $ SVar x
-    single [  x  ] = Just $ x
-    single (x:y:_) = Nothing
+    single [x] = Just $ x
+    single  _  = Nothing
     
     -- |If one unification step is found, apply it to all Scale variables.
     withSingle (Just  x) = foldr (\v m -> m <> singleton (v,x)) mempty vars
@@ -292,24 +303,24 @@ solveScaleEquality = loop mempty where
               _      -> [ ]
        
 -- |Solve Base constraints. The equality case is the same as in the Scale case.
-solveBaseConstraints :: Set BaseConstraint -> BSubst
-solveBaseConstraints c0 = loop iterationCount mempty where
-  loop 0 s0 = s0
-  loop n s0 = 
-    let c1 = subst s0 . unionMap filterEquality $ c0
-        s1 = solveBaseEquality $ c1
+solveBaseConstraints :: Set BaseConstraint -> (BSubst, Set BaseConstraint)
+solveBaseConstraints = loop iterationCount mempty where
+  loop 0 s0 c0 = (s0, c0)
+  loop n s0 c0 = 
+    let s1 = solveBaseEquality . unionMap filterEquality $ c0
+        c1 = subst s1 c0
+        
+        s2 = solveBaseSelection . unionMap filterSelection $ c0
+        c2 = subst s2 c1
       
-        c2 = subst (s1 <> s0) . unionMap filterSelection $ c0
-        s2 = solveBaseSelection $ c2
-      
-        c3 = subst (s2 <> s1 <> s0) . unionMap filterPreservation $ c0
-        s3 = solveBasePreservation $ c3
-
+        s3 = solveBasePreservation . unionMap filterPreservation $ c0
+        c3 = subst s3 c2
+        
     in if s1 == mempty &&
           s2 == mempty &&
           s3 == mempty
-          then s0
-          else loop (n-1) (s3 <> s2 <> s1 <> s0)
+          then (s0, c0)
+          else loop (n-1) (s3 <> s2 <> s1 <> s0) c3
 
       
   filterEquality  (BaseEquality gr) = singleton gr

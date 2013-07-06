@@ -51,3 +51,6 @@ maybeHead (x:_) = Just x
 
 unionMap :: (Ord a, Ord b) => (a -> Set b) -> Set a -> Set b
 unionMap f = S.unions . map f . S.toList
+
+(<&>) :: Functor f => f a -> (a -> b) -> f b
+(<&>) = flip fmap
