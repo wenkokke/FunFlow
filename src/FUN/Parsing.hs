@@ -15,7 +15,7 @@ import Text.ParserCombinators.UU.BasicInstances (Parser,pSym)
 
 -- * Top-Level Parsers
 
-parseProg :: String -> Prog
+parseProg :: String -> Program
 parseProg = runParser "stdin" pProg
 
 parseDecl :: String -> Decl
@@ -27,7 +27,7 @@ parseExpr = runParser "stdin" pExpr
 
 -- * Parsing the FUN language
 
-pProg :: Parser Prog
+pProg :: Parser Program
 pProg = Prog <$> pDecls
 
 pDecl :: Parser Decl

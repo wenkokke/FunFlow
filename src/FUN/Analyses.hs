@@ -64,7 +64,7 @@ prelude =
                , ds
                )
         
-printProgram :: Bool -> Prog -> Env -> String
+printProgram :: Bool -> Program -> Env -> String
 printProgram annotations (Prog p) env = 
   let funcType (Decl nm e) = case M.lookup nm (getPrimary env) of
                                Just r  -> nm ++ " :: " ++ (showType annotations r)
@@ -203,8 +203,8 @@ instance Rewrite Constraint where
      
 -- |Runs Algorithm W on a list of declarations, making each previous
 --  declaration an available expression in the next.
-analyseAll :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)
-analyseAll ds =
+analyseAll :: Program -> Either TypeError (Env, Program, Set Constraint)
+analyseAll (Prog ds) =
   let analyseDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
       analyseDecl (env, c0) (Decl x e) = do (t, s1, c1) <- analyse e $ env
 
@@ -220,13 +220,13 @@ analyseAll ds =
 
                                      (env, c0) <- foldM analyseDecl (env, empty) $ labeledDecls
                                      
-                                     let (f_s1, f_c1) = solveFlowConstraints . extractFlowConstraints $ c0
+                                     let (f_s1, f_c1) = solveConstraints . extractFlowConstraints $ c0
                                          c1 = S.map FlowConstraint f_c1                                        
                                          
-                                         (s_s2, s_c2) = solveScaleConstraints . extractScaleConstraints $ c0
+                                         (s_s2, s_c2) = solveConstraints . extractScaleConstraints $ c0
                                          c2 = S.map ScaleConstraint s_c2     
                                      
-                                         (b_s3, b_c3) = solveBaseConstraints  . extractBaseConstraints  $ c0
+                                         (b_s3, b_c3) = solveConstraints . extractBaseConstraints  $ c0
                                          c3 = S.map BaseConstraint b_c3
                                      
                                      return ( subst b_s3 . subst s_s2 . subst f_s1 $ env 
@@ -455,7 +455,7 @@ withFreshVars x = evalSupply (evalSupplyT (runErrorT x) freshAVars) freshTVars
     numbers = fmap (('t' :) . show) [0..]
 
 -- |Refreshes all entries in a type environment.
-refreshAll :: Either TypeError (Env, Prog, Set Constraint) -> Either TypeError (Env, Prog, Set Constraint)
+refreshAll :: Either TypeError (Env, Program, Set Constraint) -> Either TypeError (Env, Program, Set Constraint)
 refreshAll env = do (env, p, c) <- env;
                     m <- mapM (withFreshVars . refresh) $ getPrimary env
                     return (Env m $ getExtended env, p, c)

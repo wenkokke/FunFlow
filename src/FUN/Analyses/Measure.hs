@@ -255,6 +255,9 @@ solveScaleConstraints = wrap (loop 8 mempty)  where
   filterEquality (ScaleEquality gr) = singleton gr  
   wrap f = fmap (S.map ScaleEquality) . f . unionMap filterEquality 
  
+instance Information ScaleConstraint SSubst where
+  solveConstraints = solveScaleConstraints
+
   
 -- |Iteratively reduce equality constraints until no more reductions are possible.
 -- |First
@@ -332,6 +335,11 @@ solveBaseConstraints = loop iterationCount mempty where
   filterPreservation (BasePreservation (x, y) z) = singleton (x, y, z)
   filterPreservation _                           = S.empty
 
+
+instance Information BaseConstraint BSubst where
+  solveConstraints = solveBaseConstraints
+
+  
 -- |Constraints added by addition of two variables  
 solveBaseSelection :: Set (Base, Base, Base) -> BSubst
 solveBaseSelection = F.foldMap solver where

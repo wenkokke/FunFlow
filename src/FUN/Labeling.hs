@@ -23,7 +23,7 @@ instance (Labelable a) => (Labelable [a]) where
 instance (Labelable a, Labelable b) => Labelable (a, b) where
   label (a, b) = do a <- label a; b <- label b; return (a, b)
   
-instance Labelable Prog where
+instance Labelable Program where
   label (Prog ds) = do ds <- label ds; return (Prog ds)
   
 instance Labelable Decl where

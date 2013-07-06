@@ -1,7 +1,7 @@
 -- (C) 2013 Pepijn Kokke & Wout Elsinghorst
 
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 module FUN.Analyses.Utils where
 
 import Control.Applicative
@@ -13,6 +13,9 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 -- * Substitutions
+
+class Information c s | c -> s where
+  solveConstraints :: Set c -> (s, Set c)
 
 class Subst e w where
   subst :: e -> w -> w

@@ -12,7 +12,7 @@ import Text.Printf (printf)
 
 -- * Abstract syntax tree for the FUN language
 
-data Prog
+data Program
   = Prog [Decl]
   deriving (Eq)
 
@@ -184,7 +184,7 @@ showDes cp nm (UnProd x y e)       = printf "%s(%s,%s) -> %s" nm x y (showExpr c
 showDes cp nm (UnSum  (xl, el) (xr, er)) = printf "%s.Left %s -> %s ; %s.Right %s -> %s"
                                              nm xl (showExpr cp el) nm xr (showExpr cp er)
 
-instance Show Prog where show (Prog ds) = unlines (map show ds)
+instance Show Program where show (Prog ds) = unlines (map show ds)
 instance Show Decl where show = showDecl False
 instance Show Expr where show = showExpr False
 

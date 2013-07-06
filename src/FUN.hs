@@ -39,7 +39,7 @@ main :: IO ()
 main = 
   let annotations = True -- ^ Show annotations on Types/Terms. Makes the resulting types very verbose.
         
-      showResult :: (Env, Prog, Set Constraint) -> String
+      showResult :: (Env, Program, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
                                   flowInfo  = "control flow = "
                                     ++ (printFlowInformation . extractFlowConstraints $ w)
@@ -57,11 +57,11 @@ main =
 -- * Example code
   
 -- |Selected Examples to show our code in action
-example = case 2 of 
-            1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
-            2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
-            3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
-            4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
+example = Prog $ case 1 of 
+                   1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
+                   2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
+                   3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
+                   4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
                                   -- ^   type is displayed, so intermediate results cannot be checked
 
 exMeasure = fmap parseDecl $
