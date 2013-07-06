@@ -42,7 +42,7 @@ main =
       showResult :: (Env, Prog, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
                                   flowInfo  = "control flow = "
-                                    ++ (printFlowInformation . solveFlowConstraints . extractFlowConstraints $ w)
+                                    ++ (printFlowInformation . extractFlowConstraints $ w)
                                   scaleInfo  = "scale constraints = "
                                     ++ (printScaleInformation . extractScaleConstraints $ w)
                                   baseInfo  = "base constraints = "
@@ -57,7 +57,7 @@ main =
 -- * Example code
   
 -- |Selected Examples to show our code in action
-example = case 1 of 
+example = case 2 of 
             1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
             2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
             3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements

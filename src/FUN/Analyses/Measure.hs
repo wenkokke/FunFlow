@@ -62,7 +62,7 @@ data ScaleConstraint
   deriving (Eq, Ord)
      
 instance Show ScaleConstraint where
-  show (ScaleEquality ss) = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . map show . S.toList $ ss)
+  show (ScaleEquality ss) = "equality: " ++ (foldr1 (\x xs -> x ++ " ~ " ++ xs) . map show . S.toList $ ss)
   
 data BaseConstraint 
   = BaseEquality (Set Base)
@@ -73,7 +73,7 @@ data BaseConstraint
 -- |Print the semantics of the corresponding constraint. 
 instance Show BaseConstraint where
   show (BaseEquality bs)
-    = "equal: " ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . map show . S.toList $ bs) 
+    = "equality: " ++ (foldr1 (\x xs -> x ++ " ~ " ++ xs) . map show . S.toList $ bs) 
   show (BasePreservation (x, y) z)
     = "preservation: " ++ show z ++ " = if " ++ show y ++ " = none then " ++ show x 
                                  ++  "; if " ++ show x ++ " = " ++ show y ++ "then none" 
