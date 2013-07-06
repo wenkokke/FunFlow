@@ -12,6 +12,7 @@ import Debug.Trace
 
 import Data.Functor
 import Data.Monoid
+import Data.List
 
 import Data.Map (Map)
 import Data.Set (Set)
@@ -102,34 +103,100 @@ instance (Rewrite a, Ord a) => Rewrite (Set a) where
 --  The simplify algorithm is called after each round of variable elimination and hopefully
 --  creates new opportunities for the next round.
 
-noInverses :: Scale -> Bool
-noInverses (SInv _) = False
-noInverses (SCon _) = True
-noInverses (SMul a b) = noInverses a && noInverses b
-noInverses _        = False
+onlySVars :: Scale -> Bool
+onlySVars (SVar _)          = True
+onlySVars (SInv (SVar _))   = True
+onlySVars (SMul a       (SVar _))   = onlySVars a
+onlySVars (SMul a (SInv (SVar _)) ) = onlySVars a
+onlySVars _                 = False
 
 isNormal :: Scale -> Bool
-isNormal s | noInverses s          = True
+isNormal s | onlySVars s           = True
+isNormal SNil                      = True
+isNormal               (SCon _)    = True
 isNormal         (SInv (SCon _))   = True
+isNormal (SMul a       (SCon _)  ) = isNormal a
 isNormal (SMul a (SInv (SCon _)) ) = isNormal a 
+
+isNormal (SMul a       (SVar _)  ) = onlySVars a
+isNormal (SMul a (SInv (SVar _)) ) = onlySVars a
+
 isNormal _                         = False
 
-isSimple :: Scale -> Bool
-isSimple (SInv (SCon a)) = True
-isSimple _               = False
 
-mergeNormal :: Scale -> Scale -> Scale
-mergeNormal SNil b                    = b
-mergeNormal a b | isSimple b          = SMul a b
-mergeNormal a b | isSimple a          = SMul b a
 
-mergeNormal a@(SCon _) b@SNil         = a
-mergeNormal a@(SCon _) b@(SCon _)     = SMul a b
-mergeNormal a@(SCon _) b@(SMul x y)   = SMul (mergeNormal a x) y
-    
-mergeNormal (SMul x y) b              = SMul (mergeNormal x b) b 
+normalizedInsert :: Scale -> Scale -> Scale
+normalizedInsert a@ SNil           b = b
+normalizedInsert a@(SCon _)        b = SMul b a
+normalizedInsert a@(SInv (SInv x)) b = normalizedInsert x b
+normalizedInsert a@(SInv (SCon _)) b = SMul b a
+normalizedInsert a@(SInv (SMul x y)) b = normalizedInsert (SInv x) (normalizedInsert (SInv y) b)
 
-instance Rewrite Scale where
+normalizedInsert a@(SVar _) b = 
+  case b of 
+    SNil            -> a
+    (SCon _)        -> SMul a b
+    (SInv (SCon _)) -> SMul a b
+    (SVar _)        -> SMul b a
+    (SInv (SVar _)) -> SMul b a
+    (SMul x y)      -> SMul (normalizedInsert a x) y
+  
+normalizedInsert a@(SInv (SVar _)) b = 
+  case b of 
+    SNil            -> a
+    (SCon _)        -> SMul a b
+    (SInv (SCon _)) -> SMul a b
+    (SVar _)        -> SMul a b
+    (SInv (SVar _)) -> SMul a b
+    (SMul x y)      -> SMul (normalizedInsert a x) y
+
+normalizedInsert a@(SMul x y) b = normalizedInsert y (normalizedInsert x b)
+normalizedInsert s@_ _ = error $ "Magic: " ++ show s
+
+scaleToList :: Scale -> [Scale]
+scaleToList SNil = []
+scaleToList a@(SCon _)        = [a]
+scaleToList a@(SInv (SCon _)) = [a]
+scaleToList a@(SVar _)        = [a]
+scaleToList a@(SInv (SVar _)) = [a]
+scaleToList (SMul x y) = y : scaleToList x
+
+listToScale :: [Scale] -> Scale
+listToScale = foldr (\x xs -> SMul xs x) SNil
+
+simplifyNormal :: Scale -> Scale
+simplifyNormal s | isNormal s =
+  let (concrete, vars) = span (\t -> case t of 
+                                       (SCon _)      -> True
+                                       SInv (SCon _) -> True
+                                       _             -> False
+                              ) . scaleToList $ s
+      
+      getNames (SCon nm) = nm
+      getNames (SInv (SCon nm)) = nm
+      
+      nameList = nub $ map getNames concrete
+      
+      getCount nm = foldr (\x xs -> case x of 
+                                      SCon r        -> if nm == r then xs + 1 else xs
+                                      SInv (SCon r) -> if nm == r then xs - 1 else xs
+
+                          ) 0 concrete
+      
+      reducedList = concatMap (\(nm, count) -> if count >  0
+                                                  then replicate count (SCon nm)
+                                                  else
+                                               if count <  0
+                                                  then replicate (negate count) (SInv $ SCon nm)
+                                                  else []
+                           
+      
+                              ) . map (\nm -> (nm, getCount nm)) $ nameList
+      
+  in listToScale $ reducedList ++ vars
+
+
+instance Rewrite Scale where  
   simplify (SInv SNil)          = SNil
   simplify (SInv (SInv a))      = simplify a
   simplify (SInv (SMul a b))    = SMul (simplify $ SInv a) (simplify $ SInv b)
@@ -148,15 +215,12 @@ instance Rewrite Scale where
   simplify (SMul a (SMul b (SInv c))) | a == c = simplify b
   simplify (SMul a (SMul (SInv b) c)) | a == b = simplify c  
 
-  simplify (SMul a b) | isNormal b && isNormal a = mergeNormal a b where
- 
-  simplify (SMul (SMul a b) c) | isNormal c && isNormal a = SMul b (mergeNormal c a)
-  simplify (SMul (SMul a b) c) | isNormal c && isNormal b = SMul a (mergeNormal c b)
   
-  simplify (SMul a b) = SMul (simplify a) (simplify b)  
-  
-  simplify v@_                  = v
-
+  simplify x@(SMul a b) | not (isNormal x) && isNormal a = (simplifyNormal $ normalizedInsert b a)
+  simplify x@(SMul a b) | not (isNormal x) && isNormal b = (simplifyNormal $ normalizedInsert a b)
+       
+  simplify v@_ = v
+      
 iterationCount :: Int
 iterationCount = 16
   
@@ -168,11 +232,15 @@ iterationCount = 16
 --  into a normal form. Because this no normal form is guaranteed to be reached,
 --  there is a hard coded limit on how rounds to try.
 solveScaleConstraints :: Set ScaleConstraint -> SSubst
-solveScaleConstraints = loop iterationCount mempty . unionMap filterEquality where  
+solveScaleConstraints = loop 8 mempty . unionMap filterEquality where  
   loop 0 s0 _ = s0
   loop n s0 c0 = 
     let s1 = solveScaleEquality $ c0
-    in loop (n-1) (simplify $ s1 <> s0) (simplify $ subst s1 c0)
+        
+        reducer 0 = id
+        reducer n = reducer (n-1) . simplify
+        
+    in loop (n-1) (reducer 3 $ s1 <> s0) (reducer 3 $ subst s1 c0)
 
   filterEquality (ScaleEquality gr) = singleton gr  
 
