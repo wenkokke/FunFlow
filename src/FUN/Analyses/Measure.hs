@@ -52,7 +52,7 @@ instance Show Scale where
   show (SMul a (SInv b))  = "(" ++ show a ++ "/" ++ show b ++ ")"
   show (SMul (SInv a) b)  = "(" ++ show b ++ "/" ++ show a ++ ")"
   show (SMul a b)         = "(" ++ show a ++ "*" ++ show b ++ ")"
-  show (SInv a)           = "1/(" ++ show a ++ ")"
+  show (SInv a)           = "(1/" ++ show a ++ ")"
    
 instance Show Base where
   show BNil     = "None"

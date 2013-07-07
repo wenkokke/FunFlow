@@ -88,6 +88,8 @@ exMeasure = fmap parseDecl $
   , "calc s t = (s / t) * (asMeters 5) / (asSeconds 3)"
   
   , "ret s = Pair (Pair (s, (asMeters 2) * s), (asSeconds 3) * s)"
+  
+  , "eyes v = ret (asMeters 5 / asSeconds 7)"
   ]
 
 exLoop unfolded = fmap parseDecl $
