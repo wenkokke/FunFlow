@@ -19,6 +19,7 @@ import Data.Set (Set)
 
 import Control.Applicative
 
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Foldable as F
@@ -45,8 +46,11 @@ data Base
 instance Show Scale where
   show SNil               = "Unit"
   show (SVar v)           = "[" ++ v ++ "]"
-  show (SCon c)           = c
+  show (SCon c)           = c 
+                                              
+  show (SMul SNil b)      = show b
   show (SMul a (SInv b))  = "(" ++ show a ++ "/" ++ show b ++ ")"
+  show (SMul (SInv a) b)  = "(" ++ show b ++ "/" ++ show a ++ ")"
   show (SMul a b)         = "(" ++ show a ++ "*" ++ show b ++ ")"
   show (SInv a)           = "1/(" ++ show a ++ ")"
    
@@ -117,7 +121,6 @@ onlySVars _                 = False
 
 isNormal :: Scale -> Bool
 isNormal s | onlySVars s           = True
-isNormal SNil                      = True
 isNormal               (SCon _)    = True
 isNormal         (SInv (SCon _))   = True
 isNormal (SMul a       (SCon _)  ) = isNormal a
@@ -131,10 +134,16 @@ isNormal _                         = False
 
 
 normalizedInsert :: Scale -> Scale -> Scale
-normalizedInsert a@ SNil           b = b
-normalizedInsert a@(SCon _)        b = SMul b a
+normalizedInsert a@SNil            b = b
+
 normalizedInsert a@(SInv (SInv x)) b = normalizedInsert x b
-normalizedInsert a@(SInv (SCon _)) b = SMul b a
+
+normalizedInsert a@(SCon _)        SNil = a
+normalizedInsert a@(SCon _)        b    = SMul b a
+
+normalizedInsert a@(SInv (SCon _)) SNil = a
+normalizedInsert a@(SInv (SCon _)) b    = SMul b a
+
 normalizedInsert a@(SInv (SMul x y)) b = normalizedInsert (SInv x) (normalizedInsert (SInv y) b)
 
 normalizedInsert a@(SVar _) b = 
@@ -156,7 +165,6 @@ normalizedInsert a@(SInv (SVar _)) b =
     (SMul x y)      -> SMul (normalizedInsert a x) y
 
 normalizedInsert a@(SMul x y) b = normalizedInsert y (normalizedInsert x b)
-normalizedInsert s@_ _ = error $ "Magic: " ++ show s
 
 normalize t = normalizedInsert t SNil
 
@@ -171,13 +179,19 @@ scaleToList (SMul x y) = y : scaleToList x
 listToScale :: [Scale] -> Scale
 listToScale = foldr (\x xs -> SMul xs x) SNil
 
+splitScale :: Scale -> ([Scale], [Scale])
+splitScale s | not (isNormal s) = splitScale (normalize s)
+             | otherwise        = span (\t -> case t of 
+                                                  (SCon _)      -> True
+                                                  SInv (SCon _) -> True
+                                                  _             -> False
+                                        ) . scaleToList $ s
+mergeScale :: ([Scale], [Scale]) -> Scale
+mergeScale (s, v) = listToScale $ s ++ v
+                       
 simplifyNormal :: Scale -> Scale
 simplifyNormal s | isNormal s =
-  let (concrete, vars) = span (\t -> case t of 
-                                       (SCon _)      -> True
-                                       SInv (SCon _) -> True
-                                       _             -> False
-                              ) . scaleToList $ s
+  let (concrete, vars) = splitScale s
       
       getNames (SCon nm) = nm
       getNames (SInv (SCon nm)) = nm
@@ -200,7 +214,7 @@ simplifyNormal s | isNormal s =
       
                               ) . map (\nm -> (nm, getCount nm)) $ nameList
       
-  in listToScale $ reducedList ++ vars
+  in mergeScale (reducedList, vars)
 
 
 instance Rewrite Scale where  
@@ -229,7 +243,7 @@ instance Rewrite Scale where
   simplify v@_ = v
       
 iterationCount :: Int
-iterationCount = 16
+iterationCount = 8
   
 -- |Try to find a substitution that unifies as many Scale constraints as possible.
 --  All constraints are equality constraints, and the @solveBaseEquality phase is
@@ -239,34 +253,92 @@ iterationCount = 16
 --  into a normal form. Because this no normal form is guaranteed to be reached,
 --  there is a hard coded limit on how rounds to try.
 solveScaleConstraints :: Set ScaleConstraint -> (SSubst, Set ScaleConstraint)
-solveScaleConstraints = wrap (loop 8 mempty)  where   
+solveScaleConstraints = wrap (loop iterationCount mempty)  where   
   loop 0 s0 c0 = (s0, c0)
   loop n s0 c0 = 
-    let (s1, c1) = solveScaleEquality $ c0
-        
+    let (s1, c1) = simplifyScaleEquality $ c0
   
-    in loop (n-1) (reducer $ s1 <> s0) (reducer c1)
+    in loop (n-1) (reducer $ s1 <> s0) (reducer $ c1)
 
   reducer :: Rewrite a => a -> a
   reducer = go 3 where
     go 0 = id
     go n = go (n-1) . simplify
     
-  filterEquality (ScaleEquality gr) = singleton gr  
-  wrap f = fmap (S.map ScaleEquality) . f . unionMap filterEquality 
- 
+
+  wrap f = pack . f . unpack where  
+    pack = fmap (S.map ScaleEquality)
+    unpack = S.map (\(ScaleEquality gr) -> gr)
+
+type ScaleEquality = Set Scale
+    
+(>>~) :: (Ord a, Ord b) => Set a -> (a -> Set b) -> Set b
+(>>~) = flip unionMap
+infixl 1 >>~
+
+
+unifyScaleEquality :: ScaleEquality -> Set ScaleEquality
+unifyScaleEquality cs =
+  let reduceEquality a b = 
+        let (conListA, varListA) = splitScale a
+            (conListB, varListB) = splitScale b
+            
+            getNames s = case s of 
+                           SCon nm        -> nm
+                           SInv (SCon nm) -> nm
+            
+            nameList = nub $ fmap getNames (conListA ++ conListB)
+            
+            getCount nm = (nm, subCount conListA, subCount conListB) where
+              subCount = foldr (\x xs -> case x of
+                                                SCon r        -> if nm == r then xs + 1 else xs
+                                                SInv (SCon r) -> if nm == r then xs - 1 else xs
+                               ) 0 
+            
+            reconstruct (nm, countA, countB) = 
+              let diff = countA - countB
+              in if diff > 0
+                    then (replicate diff $ SCon nm, [])
+                    else
+                 if diff < 0
+                    then ([], replicate (negate diff) $ SCon nm)
+                    else ([], [])
+                    
+            simplifiedConList = fmap (reconstruct . getCount) $ nameList
+        
+            simplifiedConListA = concatMap fst simplifiedConList
+            simplifiedConListB = concatMap snd simplifiedConList
+            
+            mergedA = mergeScale $ (simplifiedConListA, varListA)
+            mergedB = mergeScale $ (simplifiedConListB, varListB)
+            
+            pickyA = if mergedA /= SNil then [mergedA] else [] 
+            pickyB = if mergedB /= SNil then [mergedB] else [] 
+            
+        in S.fromList $ pickyA ++ pickyB
+              
+  in case S.size cs of
+       0 -> S.empty
+       1 -> S.empty
+       2 -> let [a, b] = S.toList $ cs
+            in S.singleton $ reduceEquality a b
+       _ -> unionMap unifyScaleEquality $ cs >>~ \a -> 
+                                          cs >>~ \b -> if a == b 
+                                                          then S.empty 
+                                                          else S.singleton $ S.fromList [a, b]
+
 instance Solver ScaleConstraint SSubst where
   solveConstraints = solveScaleConstraints
 
   
 -- |Iteratively reduce equality constraints until no more reductions are possible.
 -- |First
-solveScaleEquality:: Set (Set Scale) -> (SSubst, Set (Set Scale))
-solveScaleEquality = loop mempty where
+simplifyScaleEquality:: Set ScaleEquality -> (SSubst, Set ScaleEquality)
+simplifyScaleEquality = loop mempty where
   loop s0 c0 =
     let s1 = F.foldMap solveCons c0
     in if s1 == mempty
-          then (s0, c0)
+          then (s0, unionMap unifyScaleEquality c0)
           else loop (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
@@ -338,8 +410,7 @@ solveBaseConstraints = loop iterationCount mempty where
 
 instance Solver BaseConstraint BSubst where
   solveConstraints = solveBaseConstraints
-
-  
+ 
 -- |Constraints added by addition of two variables  
 solveBaseSelection :: Set (Base, Base, Base) -> BSubst
 solveBaseSelection = F.foldMap solver where
@@ -372,8 +443,11 @@ solveBasePreservation = F.foldMap solver where
                           (a, BVar b) -> singleton (b, a)
                           (_,      _) -> mempty        
 
+type BaseEquality = Set Base
+                           
+                          
 -- |See @solveScaleEquality for details
-solveBaseEquality:: Set (Set Base) -> BSubst
+solveBaseEquality:: Set BaseEquality -> BSubst
 solveBaseEquality = loop mempty where
   loop s0 c0 =
     let s1 = F.foldMap solveCons $ subst s0 c0

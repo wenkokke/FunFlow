@@ -333,7 +333,7 @@ analyse exp env = case exp of
                                return ( TProd b_0 nm (subst s2 t1) t2
                                       , s2 <> s1
                                       , subst s2 c1 `union`
-                                                 c1 `union` flowConstraint nm b_0 pi
+                                                 c2 `union` flowConstraint nm b_0 pi
                                       )
   -- * Sum types
   

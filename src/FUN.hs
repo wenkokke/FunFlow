@@ -41,7 +41,7 @@ main =
         
       showResult :: (Env, Program, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
-                                  flowInfo  = "control flow = "
+                                  flowInfo  = "flow constraints = "
                                     ++ (printFlowInformation . extractFlowConstraints $ w)
                                   scaleInfo  = "scale constraints = "
                                     ++ (printScaleInformation . extractScaleConstraints $ w)
@@ -62,7 +62,7 @@ example = Prog $ case 1 of
                    2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
                    3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
                    4 -> exLoop False    -- ^ Loop program from the book, in original presentation. Only the toplevel 
-                                  -- ^   type is displayed, so intermediate results cannot be checked
+                                        -- ^   type is displayed, so intermediate results cannot be checked
 
 exMeasure = fmap parseDecl $
   [ "s1 = asMeters 3"
@@ -85,7 +85,9 @@ exMeasure = fmap parseDecl $
   , "t = r1 + r2"
   , "s = r1 / r2"
   
-  , "calc s t = (s / t) * (asMeters 5) / (asSeconds 3)" 
+  , "calc s t = (s / t) * (asMeters 5) / (asSeconds 3)"
+  
+  , "ret s = Pair (Pair (s, (asMeters 2) * s), (asSeconds 3) * s)"
   ]
 
 exLoop unfolded = fmap parseDecl $
