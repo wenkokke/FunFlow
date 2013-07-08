@@ -41,12 +41,15 @@ main =
         
       showResult :: (Env, Program, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
+                                  flowInfo  = "unresolved flow constraints = "
+                                    ++ (printFlowInformation . extractFlowConstraints $ w)
                                   scaleInfo  = "unresolved scale constraints = "
                                     ++ (printScaleInformation . extractScaleConstraints $ w)
                                   baseInfo  = "unresolved base constraints = "
                                     ++ (printBaseInformation . extractBaseConstraints $ w)
                                 
                               in programInfo ++ "\n\n"
+                              ++ flowInfo   ++ "\n\n"
                               ++ scaleInfo   ++ "\n\n"
                               ++ baseInfo    ++ "\n\n"
   in either print (putStrLn . showResult) . analyseProgram $ example
@@ -54,7 +57,7 @@ main =
 -- * Example code
   
 -- |Selected Examples to show our code in action
-example = Prog $ case 2 of 
+example = Prog $ case 1 of 
                    1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
                    2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
                    3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
@@ -85,8 +88,6 @@ exMeasure = fmap parseDecl $
   , "calc s t = (s / t) * (asMeters 5) / (asSeconds 3)"
   
   , "ret s = Pair (Pair (s, (asMeters 2) * s), (asSeconds 3) * s)"
-  
-  , "eyes v = ret (asMeters 5 / asSeconds 7)"
   ]
 
 exLoop unfolded = fmap parseDecl $

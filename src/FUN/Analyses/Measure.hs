@@ -134,21 +134,25 @@ isNormal _                         = False
 
 
 normalizedInsert :: Scale -> Scale -> Scale
+normalizedInsert a@(SInv SNil)     b = b
 normalizedInsert a@SNil            b = b
 
 normalizedInsert a@(SInv (SInv x)) b = normalizedInsert x b
 
-normalizedInsert a@(SCon _)        SNil = a
-normalizedInsert a@(SCon _)        b    = SMul b a
+normalizedInsert a@(SCon _) b@ SNil       = a
+normalizedInsert a@(SCon _) b@(SInv SNil) = a
+normalizedInsert a@(SCon _) b             = SMul b a
 
-normalizedInsert a@(SInv (SCon _)) SNil = a
-normalizedInsert a@(SInv (SCon _)) b    = SMul b a
+normalizedInsert a@(SInv (SCon _)) b@ SNil       = a
+normalizedInsert a@(SInv (SCon _)) b@(SInv SNil) = a
+normalizedInsert a@(SInv (SCon _)) b             = SMul b a
 
 normalizedInsert a@(SInv (SMul x y)) b = normalizedInsert (SInv x) (normalizedInsert (SInv y) b)
 
 normalizedInsert a@(SVar _) b = 
   case b of 
     SNil            -> a
+    (SInv SNil)     -> a
     (SCon _)        -> SMul a b
     (SInv (SCon _)) -> SMul a b
     (SVar _)        -> SMul b a
@@ -158,6 +162,7 @@ normalizedInsert a@(SVar _) b =
 normalizedInsert a@(SInv (SVar _)) b = 
   case b of 
     SNil            -> a
+    (SInv SNil)     -> a
     (SCon _)        -> SMul a b
     (SInv (SCon _)) -> SMul a b
     (SVar _)        -> SMul a b

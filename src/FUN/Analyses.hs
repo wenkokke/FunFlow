@@ -64,6 +64,12 @@ prelude =
                , ds
                )
         
+data PrintAnnotations 
+  = TypeAnnotations
+  | FlowAnnotations
+  | ScaleAnnotations
+  | BaseAnnotations
+        
 printProgram :: Bool -> Program -> Env -> String
 printProgram annotations (Prog p) env = 
   let funcType (Decl nm e) = case M.lookup nm (getPrimary env) of
@@ -269,13 +275,14 @@ analyse exp env = case exp of
 
                         (t0, s0, c0) <- analyse e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
 
-                        s1 <- t0 `u` subst s0 a_0
+                        (    s1, c1) <- t0 `u` subst s0 a_0
 
                         let b_1 = subst (s1 <> s0) b_0
 
                         return ( TArr b_1 (subst (s1 <> s0) a_x) (subst s1 t0)
                                , s1 <> s0
-                               , subst s1 c0 `union` flowConstraint b_1 pi
+                               , subst s1 c0 `union` 
+                                          c1 `union` flowConstraint b_1 pi
                                )
 
 
@@ -285,12 +292,13 @@ analyse exp env = case exp of
                         a <- fresh;
                         b <- fresh
 
-                        s3 <- subst s2 t1 `u` TArr b t2 a
+                        (    s3, c3) <- subst s2 t1 `u` TArr b t2 a
 
                         return ( subst s3 a
                                , s3 <> s2 <> s1
                                , subst (s3 <> s2) c1 `union`
-                                 subst  s3        c2
+                                 subst  s3        c2 `union`
+                                                  c3
                                )
 
   Let x e1 e2     -> do (t1, s1, c1) <- analyse e1 $ env;
@@ -308,14 +316,16 @@ analyse exp env = case exp of
                         (t1, s1, c1) <- analyse e1 . subst s0 $ env
                         (t2, s2, c2) <- analyse e2 . subst (s1 <> s0) $ env
 
-                        s3 <- subst (s2 <> s1) t0 `u` TBool
-                        s4 <- subst s3 t2 `u` subst (s3 <> s2) t1;
+                        (    s3, c3) <- subst (s2 <> s1) t0 `u` TBool
+                        (    s4, c4) <- subst s3 t2 `u` subst (s3 <> s2) t1;
 
                         return ( subst (s4 <> s3) t2
                                , s4 <> s3 <> s2 <> s1
                                , subst (s4 <> s3 <> s2 <> s1) c0 `union`
                                  subst (s4 <> s3 <> s2)       c1 `union`
-                                 subst (s4 <> s3)             c2
+                                 subst (s4 <> s3)             c2 `union`
+                                 subst  s4                    c3 `union`
+                                                              c4
                                )
 
   Con pi nm Unit         -> do b_0 <- fresh
@@ -364,13 +374,15 @@ analyse exp env = case exp of
 
                                   b_0 <- fresh
 
-                                  s2 <- t1 `u` TUnit b_0 nm
+                                  (    s2, c2) <- t1 `u` TUnit b_0 nm
 
                                   (t3, s3, c3) <- analyse e2 . subst (s2 <> s1) $ env
 
                                   return ( t3
                                          , s3 <> s2 <> s1
-                                         , subst (s3 <> s2) c1 `union` c3
+                                         , subst (s3 <> s2) c1 `union`
+                                           subst  s3        c2 `union` 
+                                                            c3
                                          )
 
   Des nm e1 (UnProd x y e2)   -> do (t1, s1, c1) <- analyse e1 $ env
@@ -380,12 +392,14 @@ analyse exp env = case exp of
 
                                     b_0 <- fresh
 
-                                    s2 <- t1 `u` TProd b_0 nm a_x a_y
+                                    (    s2, c2) <- t1 `u` TProd b_0 nm a_x a_y
                                     (t3, s3, c3) <- analyse e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
 
                                     return ( t3
                                            , s3 <> s2 <> s1
-                                           , subst (s3 <> s2) c1 `union` c3
+                                           , subst (s3 <> s2) c1 `union`
+                                             subst  s3        c2 `union`
+                                                              c3
                                            )
 
   Des nm e1 (UnSum (x, ex) (y, ey))     -> do (t1, s1, c1) <- analyse e1 $ env
@@ -395,18 +409,20 @@ analyse exp env = case exp of
 
                                               b_0 <- fresh
 
-                                              s2 <- t1 `u` TSum b_0 nm a_x a_y
+                                              (    s2, c2) <- t1 `u` TSum b_0 nm a_x a_y
 
                                               (tx, s3, c3) <- analyse ex . (x ~> a_x) . subst (s2 <> s1) $ env
                                               (ty, s4, c4) <- analyse ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
 
-                                              s5 <- tx `u` ty
+                                              (    s5, c5) <- tx `u` ty
 
                                               return ( subst s5 tx
                                                      , s5 <> s4 <> s3 <> s2 <> s1
                                                      , subst (s5 <> s4 <> s3 <> s2) c1 `union`
+                                                       subst (s5 <> s4 <> s3)       c2 `union`
                                                        subst (s5 <> s4)             c3 `union`
-                                                       subst  s5                    c4
+                                                       subst  s5                    c4 `union`
+                                                                                    c5
                                                      )
 
                                                      
@@ -419,11 +435,11 @@ analyse exp env = case exp of
                     by <- fresh
 
                     (t1, s1, c1) <- analyse x $ env
-                    s2 <- t1 `u` TInt rx bx
+                    (    s2, c2) <- t1 `u` TInt rx bx
 
 
                     (t3, s3, c3) <- analyse y . subst (s2 <> s1) $ env
-                    s4 <- t3 `u` TInt ry by
+                    (    s4, c4) <- t3 `u` TInt ry by
 
                     rz <- fresh
                     bz <- fresh
@@ -439,7 +455,9 @@ analyse exp env = case exp of
                            , s4 <> s3 <> s2 <> s1
                            , subst (s4 <> s3 <> s2 <> s1) c0 `union`
                              subst (s4 <> s3 <> s2)       c1 `union`
-                             subst  s4                    c3
+                             subst (s4 <> s3)             c2 `union`
+                             subst  s4                    c3 `union`
+                                                          c4
                            )
 
 -- * Fresh Names
@@ -491,6 +509,13 @@ data Constraint
   | BaseConstraint  BaseConstraint
     deriving (Eq, Ord, Show)
 
+flowEquality :: [Flow] -> Set Constraint
+flowEquality fs = S.fromList $ fs >>= \a -> 
+                               fs >>= \b -> if a == b 
+                                               then [] 
+                                               else [FlowConstraint $ FlowEquality a b]
+
+    
 -- |Construct a Scale resp. Base Equality Constraint from a list of Scale resp. Base annotations. All 
 --  annotations in the list will be unified post-W
 scaleEquality :: [Scale] -> Set Constraint
@@ -512,19 +537,19 @@ preserveBase xy z = S.singleton $ BaseConstraint $ BasePreservation xy z
 flowConstraint :: Flow -> Label -> Set Constraint
 flowConstraint f l = singleton $ FlowConstraint $ Flow f (singleton l)
 
--- |Seperate the Flow Constrains from the rest of the Constraint set
+-- |Seperate the Flow Constraints from the rest of the Constraint set
 extractFlowConstraints :: Set Constraint -> Set FlowConstraint
 extractFlowConstraints = unionMap findFlows where
   findFlows (FlowConstraint r)      = S.singleton r
   findFlows _                       = S.empty
 
--- |Seperate the Scale Constrains from the rest of the Constraint set
+-- |Seperate the Scale Constraints from the rest of the Constraint set
 extractScaleConstraints :: Set Constraint -> Set ScaleConstraint
 extractScaleConstraints = unionMap findScales where
     findScales (ScaleConstraint ss) = S.singleton ss
     findScales _                    = S.empty
 
--- |Seperate the Base Constrains from the rest of the Constraint set
+-- |Seperate the Base Constraints from the rest of the Constraint set
 extractBaseConstraints :: Set Constraint -> Set BaseConstraint
 extractBaseConstraints = unionMap findBases where
   findBases (BaseConstraint bs) = S.singleton bs
@@ -610,49 +635,39 @@ injectBSubst (BSubst m) e = Env (getPrimary e) ((getExtended e) { baseMap = m })
 
 -- |Unification as per Robinson's unification algorithm.
 
-u :: Type -> Type -> Analysis Env
+u :: Type -> Type -> Analysis (Env, Set Constraint)
 u TBool TBool = return $ mempty
-u (TInt r1 b1) (TInt r2 b2)
-                   = let s0 = case (r1, r2) of
-                                (SVar v1,       _) -> singleton (v1, r2)
-                                (_      , SVar v2) -> singleton (v2, r1)
-                                (_      ,       _) -> mempty -- ^ shouldn't occur in the natural order of things
-                                                            
-                                
-                         s1 = case (b1, b2) of
-                                (BVar v1,       _) -> singleton (v1, b2)
-                                (_      , BVar v2) -> singleton (v2, b1)
-                                (_      ,       _) -> mempty
-                     in return (s1 <> s0)
-u (TArr (FVar p1) a1 b1) (TArr p2 a2 b2)
-                  = do let s0 = singleton (p1, p2)
-                       s1 <- subst s0 a1 `u` subst s0 a2
-                       s2 <- subst (s1 <> s0) b1 `u` subst (s1 <> s0) b2
-                       return (s2 <> s1 <> s0)
-u t1@(TProd (FVar p1) n1 x1 y1) t2@(TProd p2 n2 x2 y2)
+u (TInt r1 b1) (TInt r2 b2) = return (mempty, scaleEquality [r1, r2] `union` baseEquality [b1, b2])
+u (TArr p1 a1 b1) (TArr p2 a2 b2)
+                  = do let c0 = flowEquality [p1, p2]
+                       (s1, c1) <- a1 `u` a2
+                       (s2, c2) <- subst s1 b1 `u` subst s1 b2
+                       return (s2 <> s1, c0 `union` c1 `union` c2)
+u t1@(TProd p1 n1 x1 y1) t2@(TProd p2 n2 x2 y2)
                   = if n1 == n2
-                    then do let s0 = singleton (p1, p2)
-                            s1 <- subst s0 x1 `u` subst s0 x2;
-                            s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
-                            return (s2 <> s1 <> s0)
+                    then do let c0 = flowEquality [p1, p2]
+                            (s1, c1) <- x1 `u` x2;
+                            (s2, c2) <- subst s1 y1 `u` subst s1 y2
+                            return (s2 <> s1, c0 `union` c1 `union` c2)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TSum (FVar p1) n1 x1 y1) t2@(TSum p2 n2 x2 y2)
+u t1@(TSum p1 n1 x1 y1) t2@(TSum p2 n2 x2 y2)
                   = if n1 == n2
-                    then do let s0 = singleton (p1, p2)
-                            s1 <- subst s0 x1 `u` subst s0 x2;
-                            s2 <- subst (s1 <> s0) y1 `u` subst (s1 <> s0) y2
-                            return (s2 <> s1 <> s0)
+                    then do let c0 = flowEquality [p1, p2]
+                            (s1, c1) <- x1 `u` x2;
+                            (s2, c2) <- subst s1 y1 `u` subst s1 y2
+                            return (s2 <> s1, c0 `union` c1 `union` c2)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TUnit (FVar p1) n1) t2@(TUnit p2 n2)
+u t1@(TUnit p1 n1) t2@(TUnit p2 n2)
                   = if n1 == n2
-                    then do return $ singleton (p1, p2)
+                    then do let c0 = flowEquality [p1, p2]
+                            return $ (mempty, c0)
                     else do throwError (CannotUnify t1 t2)
 u t1 t2@(TVar n)
   | n `occurs` t1 && t1 /= t2 = throwError (OccursCheck n t1)
-  | otherwise     = return $ singleton (n, t1)
+  | otherwise     = return $ (singleton (n, t1), empty)
 u t1@(TVar n) t2
   | n `occurs` t2 && t1 /= t2 = throwError (OccursCheck n t2)
-  | otherwise     = return $ singleton (n, t2)
+  | otherwise     = return $ (singleton (n, t2), empty)
 u t1 t2           = throwError (CannotUnify t1 t2)
 
 -- |Occurs check for Robinson's unification algorithm.

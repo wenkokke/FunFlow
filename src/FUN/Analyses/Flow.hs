@@ -32,6 +32,7 @@ data Flow
 -- |Flow constraints generated for Control Flow Analysis 
 data FlowConstraint
   = Flow Flow (Set Label)
+  | FlowEquality Flow Flow
     deriving (Eq, Ord, Show)
     
 newtype FSubst = FSubst { 
@@ -55,13 +56,7 @@ instance Monoid FSubst where
 --  associated to a specific type that can occur multiple times in the program and each
 --  set constains program points that can reach this type.
 solveFlowConstraints :: Set FlowConstraint -> (FSubst, Set FlowConstraint)
-solveFlowConstraints cs =
-  let subst =   M.fromListWithKey  (\f -> \lp lq -> lp `union` lq) 
-              . L.map (\(Flow f l) -> case f of FVar v -> (v, l) ) 
-              . S.toList $ cs    
-  in ( FSubst $ M.map FSet subst
-     , S.fromList . L.map (\(f, l) -> Flow (FVar f) l) . M.toList $ subst
-     )
+solveFlowConstraints cs = (mempty, cs)
     
 instance Solver FlowConstraint FSubst where
   solveConstraints = solveFlowConstraints
@@ -73,8 +68,15 @@ instance Solver FlowConstraint FSubst where
 printFlowInformation :: Set FlowConstraint -> String
 printFlowInformation m =
   let prefix = "{\n"
-      printCon (nm, v) = nm ++ "\t[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]"
-      content = S.foldr (\(Flow f v) as -> "  {" ++ show f ++ "}\t~> " ++ show v ++ "\n" ++ as) "" m
+      printSet v = "[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]"
+      printRewrite f v = "  {" ++ f ++ "}\t~> " ++ printSet v ++ "\n"
+      content = S.foldr (\r as -> case r of 
+                                       Flow (FVar f) v -> printRewrite f v ++ as
+                                       FlowEquality (FVar a) (FVar b) -> "  {" ++ a ++ "} ~  {" ++ b ++ "}\n" 
+                                       FlowEquality (FVar f) (FSet v) -> printRewrite f v ++ as
+                                       FlowEquality (FSet v) (FVar f) -> printRewrite f v ++ as
+                                       FlowEquality (FSet p) (FSet q) -> "  " ++ printSet p ++ " ~ " ++ printSet q ++ "\n"
+                        ) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
   
@@ -86,3 +88,5 @@ instance Subst (Map FVar Flow) Flow where
   
 instance (Subst e Flow) => Subst e FlowConstraint where
   subst m (Flow n l) = Flow (subst m n) l
+  subst m (FlowEquality a b) = FlowEquality (subst m a) (subst m b)
+  
