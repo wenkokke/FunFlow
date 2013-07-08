@@ -193,33 +193,6 @@ splitScale s | not (isNormal s) = splitScale (normalize s)
                                         ) . scaleToList $ s
 mergeScale :: ([Scale], [Scale]) -> Scale
 mergeScale (s, v) = listToScale $ s ++ v
-                       
-simplifyNormal :: Scale -> Scale
-simplifyNormal s | isNormal s =
-  let (concrete, vars) = splitScale s
-      
-      getNames (SCon nm) = nm
-      getNames (SInv (SCon nm)) = nm
-      
-      nameList = nub $ map getNames concrete
-      
-      getCount nm = foldr (\x xs -> case x of 
-                                      SCon r        -> if nm == r then xs + 1 else xs
-                                      SInv (SCon r) -> if nm == r then xs - 1 else xs
-
-                          ) 0 concrete
-      
-      reducedList = concatMap (\(nm, count) -> if count >  0
-                                                  then replicate count (SCon nm)
-                                                  else
-                                               if count <  0
-                                                  then replicate (negate count) (SInv $ SCon nm)
-                                                  else []
-                           
-      
-                              ) . map (\nm -> (nm, getCount nm)) $ nameList
-      
-  in mergeScale (reducedList, vars)
 
 
 instance Rewrite Scale where  
@@ -241,9 +214,7 @@ instance Rewrite Scale where
   simplify (SMul a (SMul b (SInv c))) | a == c = simplify b
   simplify (SMul a (SMul (SInv b) c)) | a == b = simplify c  
 
-  
-  simplify x@(SMul a b) | not (isNormal x) && isNormal a = (simplifyNormal $ normalizedInsert b a)
-  simplify x@(SMul a b) | not (isNormal x) && isNormal b = (simplifyNormal $ normalizedInsert a b)
+  simplify x@(SMul a b) | not (isNormal x) = normalize x
        
   simplify v@_ = v
       
@@ -259,14 +230,14 @@ iterationCount = 8
 --  there is a hard coded limit on how rounds to try.
 solveScaleConstraints :: Set ScaleConstraint -> (SSubst, Set ScaleConstraint)
 solveScaleConstraints = wrap (loop iterationCount mempty)  where   
-  loop 0 s0 c0 = (s0, c0)
+  loop 0 s0 c0 = (reducer s0, reducer c0)
   loop n s0 c0 = 
-    let (s1, c1) = simplifyScaleEquality $ c0
+    let (s1, c1) = simplifyScaleEquality $ reducer c0
   
-    in loop (n-1) (reducer $ s1 <> s0) (reducer $ c1)
+    in loop (n-1) (s1 <> reducer s0) c1
 
   reducer :: Rewrite a => a -> a
-  reducer = go 3 where
+  reducer = go 2 where
     go 0 = id
     go n = go (n-1) . simplify
     
@@ -287,35 +258,60 @@ unifyScaleEquality cs =
   let reduceEquality a b = 
         let (conListA, varListA) = splitScale a
             (conListB, varListB) = splitScale b
+                                    
             
-            getNames s = case s of 
-                           SCon nm        -> nm
-                           SInv (SCon nm) -> nm
-            
-            nameList = nub $ fmap getNames (conListA ++ conListB)
-            
-            getCount nm = (nm, subCount conListA, subCount conListB) where
-              subCount = foldr (\x xs -> case x of
-                                                SCon r        -> if nm == r then xs + 1 else xs
-                                                SInv (SCon r) -> if nm == r then xs - 1 else xs
-                               ) 0 
-            
-            reconstruct (nm, countA, countB) = 
-              let diff = countA - countB
-              in if diff > 0
-                    then (replicate diff $ SCon nm, [])
-                    else
-                 if diff < 0
-                    then ([], replicate (negate diff) $ SCon nm)
-                    else ([], [])
                     
-            simplifiedConList = fmap (reconstruct . getCount) $ nameList
-        
+            simplifiedConList = fmap (reconstruct . getCount) $ names where
+              names = nub $ fmap getNames (conListA ++ conListB) where
+                getNames s = case s of 
+                              SCon nm        -> nm
+                              SInv (SCon nm) -> nm
+
+              
+              getCount nm = (nm, subCount conListA, subCount conListB) where
+                subCount = foldr (\x xs -> case x of
+                                              SCon r        -> if nm == r then xs + 1 else xs
+                                              SInv (SCon r) -> if nm == r then xs - 1 else xs
+                                 ) 0 
+              reconstruct (nm, countA, countB) = 
+                let diff = countA - countB
+                in if diff > 0
+                      then (replicate diff $ SCon nm, [])
+                      else
+                  if diff < 0
+                      then ([], replicate (negate diff) $ SCon nm)
+                      else ([], [])
+
+            simplifiedVarList = fmap (reconstruct . getCount) $ names where
+              names = nub $ fmap getNames (varListA ++ varListB) where
+              getNames s = case s of 
+                              SVar nm        -> nm
+                              SInv (SVar nm) -> nm
+
+              
+              getCount nm = (nm, subCount varListA, subCount varListB) where
+                subCount = foldr (\x xs -> case x of
+                                              SVar r        -> if nm == r then xs + 1 else xs
+                                              SInv (SVar r) -> if nm == r then xs - 1 else xs
+                                 ) 0 
+              reconstruct (nm, countA, countB) = 
+                let diff = countA - countB
+                in if diff > 0
+                      then (replicate diff $ SVar nm, [])
+                      else
+                  if diff < 0
+                      then ([], replicate (negate diff) $ SVar nm)
+                      else ([], [])
+
+                      
             simplifiedConListA = concatMap fst simplifiedConList
             simplifiedConListB = concatMap snd simplifiedConList
-            
-            mergedA = mergeScale $ (simplifiedConListA, varListA)
-            mergedB = mergeScale $ (simplifiedConListB, varListB)
+
+            simplifiedVarListA = concatMap fst simplifiedVarList
+            simplifiedVarListB = concatMap snd simplifiedVarList
+  
+            mergedA = mergeScale $ (simplifiedConListA, simplifiedVarListA)
+            mergedB = mergeScale $ (simplifiedConListB, simplifiedVarListB)
             
             pickyA = if mergedA /= SNil then [mergedA] else [] 
             pickyB = if mergedB /= SNil then [mergedB] else [] 
