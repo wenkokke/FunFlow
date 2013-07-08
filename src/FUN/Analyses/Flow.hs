@@ -23,16 +23,15 @@ type FVar = String
 -- | Program points.
 type Label = String
 
--- |Control Flow Annotation. To keep things Simple, only variables are allowed
+-- |Control Flow Annotation. 
 data Flow 
   = FVar FVar   -- ^ Flow variable
+  | FSet (Set Label)
     deriving (Eq, Ord, Show)
     
 -- |Flow constraints generated for Control Flow Analysis 
 data FlowConstraint
-  = Flow String -- ^ Type of the Program Point (Abs, Fix or some custom product/sum/unit)    
-         Flow   -- ^ Annotation Variable associated to a Type
-         (Set Label)  -- ^ Program Point that reaches the associated with the Flow variable
+  = Flow Flow (Set Label)
     deriving (Eq, Ord, Show)
     
 newtype FSubst = FSubst { 
@@ -47,8 +46,8 @@ instance Subst FSubst FSubst where
 
  
 instance Monoid FSubst where
-  mempty      = FSubst mempty
-  mappend s t = FSubst (getFSubst (subst s t) <> getFSubst (subst t s))
+  mempty      = FSubst $ mempty
+  mappend s t = FSubst $ getFSubst (subst s t) <> getFSubst (subst t s)
 
  
 -- |Solve the set of flow constraints obtained from the inference algorithm and 
@@ -56,21 +55,13 @@ instance Monoid FSubst where
 --  associated to a specific type that can occur multiple times in the program and each
 --  set constains program points that can reach this type.
 solveFlowConstraints :: Set FlowConstraint -> (FSubst, Set FlowConstraint)
-solveFlowConstraints =
-  let mergeNames p q = let (np, cp) = span (/= '.') p
-                           (nq, cq) = span (/= '.') q
-                       in if np == nq
-                             then if cp == cq
-                                     then p
-                                     else np ++ ".{" ++ tail cp ++ ", " ++ tail cq ++ "}"
-                             else error $ "different constructors used to construct sum type (\"" ++ np ++ "\" vs. \"" ++ nq ++ "\")"
-      --toFEnv (Flow nm (FVar r) l) = M.singleton r (nm, S.singleton l)
-  in  (\r -> (mempty, r))
-     . S.fromList . L.map (\(f, (nm, l)) -> Flow nm (FVar f) l)
-     . M.toList  
-     . M.fromListWithKey  (\f -> \(np, lp) (nq, lq) -> (mergeNames np nq, lp `union` lq) ) 
-     . L.map (\(Flow nm (FVar f) l) -> (f, (nm, l)) ) 
-     . S.toList 
+solveFlowConstraints cs =
+  let subst =   M.fromListWithKey  (\f -> \lp lq -> lp `union` lq) 
+              . L.map (\(Flow f l) -> case f of FVar v -> (v, l) ) 
+              . S.toList $ cs    
+  in ( FSubst $ M.map FSet subst
+     , S.fromList . L.map (\(f, l) -> Flow (FVar f) l) . M.toList $ subst
+     )
     
 instance Solver FlowConstraint FSubst where
   solveConstraints = solveFlowConstraints
@@ -83,7 +74,7 @@ printFlowInformation :: Set FlowConstraint -> String
 printFlowInformation m =
   let prefix = "{\n"
       printCon (nm, v) = nm ++ "\t[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]"
-      content = S.foldr (\(Flow nm (FVar f) v) as -> "  {" ++ f ++ "}\t~> " ++ printCon (nm, v) ++ "\n" ++ as) "" m
+      content = S.foldr (\(Flow f v) as -> "  {" ++ show f ++ "}\t~> " ++ show v ++ "\n" ++ as) "" m
       suffix = "}"
   in prefix ++ content ++ suffix
   
@@ -91,6 +82,7 @@ printFlowInformation m =
 
 instance Subst (Map FVar Flow) Flow where
   subst m v@(FVar n) = M.findWithDefault v n m
-
+  subst m v@(FSet _) = v
+  
 instance (Subst e Flow) => Subst e FlowConstraint where
-  subst m (Flow nm v l) = Flow nm (subst m v) l
+  subst m (Flow n l) = Flow (subst m n) l

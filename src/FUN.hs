@@ -11,7 +11,7 @@ import FUN.Base      -- ^ Abstract syntax tree
 import FUN.Parsing   -- ^ Parser
 import FUN.Labeling  -- ^ Labeling
 import FUN.Analyses 
-  ( analyseAll, printProgram
+  ( analyseProgram, printProgram
   , Env, Constraint
   , getPrimary, getExtended
   , extractFlowConstraints
@@ -41,23 +41,20 @@ main =
         
       showResult :: (Env, Program, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
-                                  flowInfo  = "flow constraints = "
-                                    ++ (printFlowInformation . extractFlowConstraints $ w)
-                                  scaleInfo  = "scale constraints = "
+                                  scaleInfo  = "unresolved scale constraints = "
                                     ++ (printScaleInformation . extractScaleConstraints $ w)
-                                  baseInfo  = "base constraints = "
+                                  baseInfo  = "unresolved base constraints = "
                                     ++ (printBaseInformation . extractBaseConstraints $ w)
                                 
                               in programInfo ++ "\n\n"
-                              ++ flowInfo    ++ "\n\n"
                               ++ scaleInfo   ++ "\n\n"
                               ++ baseInfo    ++ "\n\n"
-  in either print (putStrLn . showResult) . analyseAll $ example
+  in either print (putStrLn . showResult) . analyseProgram $ example
 
 -- * Example code
   
 -- |Selected Examples to show our code in action
-example = Prog $ case 1 of 
+example = Prog $ case 2 of 
                    1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
                    2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
                    3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
