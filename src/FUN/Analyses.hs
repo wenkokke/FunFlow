@@ -648,18 +648,26 @@ data Env = Env {
   , baseMap  :: BSubst
   }
 
-                                     
--- * Extend Substitutions to @Env@
+instance Subst TSubst Type where
+  subst m f@(TVar n) = M.findWithDefault f n (getTSubst m)
+  subst m r@ TBool     = r
+  subst m r@(TInt _ _) = r
+  
+  subst m (TArr  f    a b) = TArr  f    (subst m a) (subst m b)
+  subst m (TProd f nm a b) = TProd f nm (subst m a) (subst m b)
+  subst m (TSum  f nm a b) = TSum  f nm (subst m a) (subst m b)
+  subst m (TUnit f nm)     = TUnit f nm
 
 -- |Substitutes a type for a type variable in a type.
 instance Subst Env Type where
   subst m TBool = TBool
-  subst m r@(TInt s b)     = TInt  (subst m s) (subst m b)
-  subst m v@(TVar n)       = M.findWithDefault v n (getTSubst . typeMap $ m)
-  subst m (TArr  v    a b) = TArr  (subst m v) (subst m a) (subst m b)
-  subst m (TProd v nm a b) = TProd (subst m v) nm (subst m a) (subst m b)
-  subst m (TSum  v nm a b) = TSum  (subst m v) nm (subst m a) (subst m b)
-  subst m (TUnit v nm)     = TUnit (subst m v) nm
+  subst m r@(TInt s b)     = TInt  (subst (scaleMap m) s) (subst (baseMap m) b)
+  subst m f@(TVar _)       = subst (typeMap m) f
+  
+  subst m (TArr  f    a b) = TArr  (subst (flowMap m) f)    (subst m a) (subst m b)
+  subst m (TProd f nm a b) = TProd (subst (flowMap m) f) nm (subst m a) (subst m b)
+  subst m (TSum  f nm a b) = TSum  (subst (flowMap m) f) nm (subst m a) (subst m b)
+  subst m (TUnit f nm)     = TUnit (subst (flowMap m) f) nm
 
 instance Subst Env Env where
   subst m env = env { typeMap = TSubst . fmap (subst m) . getTSubst . typeMap $ env }
