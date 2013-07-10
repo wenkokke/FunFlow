@@ -233,13 +233,13 @@ solveScaleConstraints = wrap (loop iterationCount mempty)  where
   loop 0 s0 c0 = (reducer s0, reducer c0)
   loop n s0 c0 = 
     let (s1, c1) = simplifyScaleEquality $ reducer c0
-  
-    in loop (n-1) (s1 <> reducer s0) c1
+        (    c2) = unionMap unifyScaleEquality $ c1
+    in loop (n-1) (s1 <> reducer s0) c2
 
   reducer :: Rewrite a => a -> a
-  reducer = go 2 where
-    go 0 = id
-    go n = go (n-1) . simplify
+  reducer = loop 2 where
+    loop 0 = id
+    loop n = loop (n-1) . simplify
     
 
   wrap f = pack . f . unpack where  
@@ -333,13 +333,12 @@ instance Solver ScaleConstraint SSubst where
 
   
 -- |Iteratively reduce equality constraints until no more reductions are possible.
--- |First
 simplifyScaleEquality:: Set ScaleEquality -> (SSubst, Set ScaleEquality)
 simplifyScaleEquality = loop mempty where
   loop s0 c0 =
     let s1 = F.foldMap solveCons c0
     in if s1 == mempty
-          then (s0, unionMap unifyScaleEquality c0)
+          then (s0, c0)
           else loop (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
@@ -381,79 +380,97 @@ simplifyScaleEquality = loop mempty where
 -- |Solve Base constraints. The equality case is the same as in the Scale case.
 solveBaseConstraints :: Set BaseConstraint -> (BSubst, Set BaseConstraint)
 solveBaseConstraints = loop iterationCount mempty where
-  loop 0 s0 c0 = (s0, c0)
+  loop 0 s0 c0 = (s0, removeSolved c0)
   loop n s0 c0 = 
-    let s1 = solveBaseEquality . unionMap filterEquality $ c0
-        c1 = subst s1 c0
+    let (s1, c1) = solveBaseEquality . unionMap unpackEquality $ c0
         
-        s2 = solveBaseSelection . unionMap filterSelection $ c0
-        c2 = subst s2 c1
+        (s2, c2) = solveBaseSelection . unionMap unpackSelection $ subst s1 c0
       
-        s3 = solveBasePreservation . unionMap filterPreservation $ c0
-        c3 = subst s3 c2
-        
+        (s3, c3) = solveBasePreservation . unionMap unpackPreservation $ subst (s2 <> s1) c0
+                
     in if s1 == mempty &&
           s2 == mempty &&
           s3 == mempty
-          then (s0, c0)
-          else loop (n-1) (s3 <> s2 <> s1 <> s0) c3
-
-      
-  filterEquality  (BaseEquality gr) = singleton gr
-  filterEquality _                  = S.empty
+          then (s0, removeSolved c0)
+          else loop (n-1) (s3 <> s2 <> s1 <> s0) (  S.map packEquality     c1
+                                                 <> S.map packSelection    c2
+                                                 <> S.map packPreservation c3
+                                                 )
+                                                 
+  removeSolved = unionMap (\r -> case r of 
+                                   BaseEquality t -> if S.size t == 0 || 
+                                                        S.size t == 1 
+                                                        then mempty 
+                                                        else S.singleton $ BaseEquality t
+                
+                                   _              -> S.singleton r
+                          )
+                                              
+  unpackEquality  (BaseEquality gr) = singleton gr
+  unpackEquality _                  = S.empty
+  packEquality = BaseEquality
   
-  filterSelection (BaseSelection (x, y) z) = singleton (x, y, z)
-  filterSelection _                        = S.empty
-
-  filterPreservation (BasePreservation (x, y) z) = singleton (x, y, z)
-  filterPreservation _                           = S.empty
+  unpackSelection (BaseSelection (x, y) z) = singleton (x, y, z)
+  unpackSelection _                        = S.empty
+  packSelection (x, y, z) = BaseSelection (x, y) z
+  
+  unpackPreservation (BasePreservation (x, y) z) = singleton (x, y, z)
+  unpackPreservation _                           = S.empty
+  packPreservation (x, y, z) = BasePreservation (x, y) z
 
 
 instance Solver BaseConstraint BSubst where
   solveConstraints = solveBaseConstraints
- 
--- |Constraints added by addition of two variables  
-solveBaseSelection :: Set (Base, Base, Base) -> BSubst
-solveBaseSelection = F.foldMap solver where
-  solver (x, y, BVar z) = if x == BNil
-                             then singleton (z, y) 
-                             else
-                          if y == BNil
-                             then singleton (z, x) 
-                             else mempty
-  solver (BNil, y, z) = case (y, z) of
-                          (BVar a, b) -> singleton (a, b)
-                          (a, BVar b) -> singleton (b, a)
-                          (_,      _) -> mempty
-  solver (x, BNil, z) = case (x, z) of
-                          (BVar a, b) -> singleton (a, b)
-                          (a, BVar b) -> singleton (b, a)
-                          (_,      _) -> mempty        
 
+type BaseSelection = (Base, Base, Base)
+  
+-- |Constraints added by addition of two variables  
+solveBaseSelection :: Set BaseSelection -> (BSubst, Set BaseSelection)
+solveBaseSelection = F.foldMap solver where
+  solver r@(x, y, BVar z) = if x == BNil
+                               then (singleton (z, y), mempty) 
+                               else
+                            if y == BNil
+                               then (singleton (z, x), mempty) 
+                               else (mempty, S.singleton r)
+  solver r@(BNil, y, z) = case (y, z) of
+                            (BVar a,  b) -> (singleton (a, b), mempty)
+                            (a,  BVar b) -> (singleton (b, a), mempty)
+                            (BNil, BNil) -> (mempty, mempty)
+                            (_,       _) -> (mempty, S.singleton r)
+  solver r@(x, BNil, z) = case (x, z) of
+                            (BVar a,  b) -> (singleton (a, b), mempty)
+                            (a,  BVar b) -> (singleton (b, a), mempty)
+                            (BNil, BNil) -> (mempty, mempty)
+                            (_,       _) -> (mempty, S.singleton r)        
+
+                            
+type BasePreservation = (Base, Base, Base)
+                                    
 -- |Constraints added by subtraction of two variables  
-solveBasePreservation :: Set (Base, Base, Base) -> BSubst
+solveBasePreservation :: Set BasePreservation -> (BSubst, Set BasePreservation)
 solveBasePreservation = F.foldMap solver where
-  solver (x, y, BVar z) = if y == BNil
-                             then singleton (z, x) 
-                             else
-                          if x == y
-                             then singleton (z, BNil) 
-                             else mempty 
-  solver (x, BNil, z) = case (x, z) of
-                          (BVar a, b) -> singleton (a, b)
-                          (a, BVar b) -> singleton (b, a)
-                          (_,      _) -> mempty        
+  solver r@(x, y, BVar z) = if y == BNil
+                               then (singleton (z, x), mempty) 
+                               else
+                            if x == y
+                               then (singleton (z, BNil), mempty) 
+                               else (mempty, S.singleton r) 
+  solver r@(x, BNil, z) = case (x, z) of
+                            (BVar a, b) -> (singleton (a, b), mempty)
+                            (a, BVar b) -> (singleton (b, a), mempty)
+                            (_,      _) -> (mempty, S.singleton r)        
 
 type BaseEquality = Set Base
                            
                           
 -- |See @solveScaleEquality for details
-solveBaseEquality:: Set BaseEquality -> BSubst
+solveBaseEquality:: Set BaseEquality -> (BSubst, Set BaseEquality)
 solveBaseEquality = loop mempty where
   loop s0 c0 =
     let s1 = F.foldMap solveCons $ subst s0 c0
     in if s1 == mempty
-          then s0
+          then (s0, c0)
           else loop (s1 <> s0) (subst s1 c0)
    
   solveCons cs = withSingle (single cons) where
@@ -514,11 +531,11 @@ instance Subst SSubst Scale where
   subst m v@(SCon _)   = v
   subst m   (SMul a b) = SMul (subst m a) (subst m b)
   subst m   (SInv a)   = SInv (subst m a)
-  subst m v@_ = v
+  subst m v@_          = v
    
 instance Monoid SSubst where
-  mempty      = SSubst mempty
-  mappend s t = SSubst (getSSubst (subst s t) <> getSSubst (subst t s))
+  s `mappend` t = SSubst $ getSSubst (subst s t) <> getSSubst (subst t s)
+  mempty        = SSubst $ M.empty
                 
 instance Singleton SSubst (SVar,Scale) where
   singleton (k,a) = SSubst (M.singleton k a)
@@ -546,8 +563,8 @@ instance Subst BSubst (Base, Base, Base) where
   subst m (a, b, c) = (subst m a, subst m b, subst m c)
   
 instance Monoid BSubst where
-  mempty      = BSubst mempty
-  mappend s t = BSubst (getBSubst (subst s t) <> getBSubst (subst t s))
+  s `mappend` t = BSubst $ getBSubst (subst s t) <> getBSubst (subst t s)
+  mempty        = BSubst $ mempty
   
 instance Singleton BSubst (BVar, Base) where
   singleton (k,a) = BSubst (M.singleton k a)

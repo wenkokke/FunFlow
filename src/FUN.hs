@@ -48,7 +48,7 @@ main =
                                     ++ (printBaseInformation . extractBaseConstraints $ w)
                                 
                               in programInfo ++ "\n\n"
-                              ++ flowInfo   ++ "\n\n"
+                              ++ flowInfo    ++ "\n\n"
                               ++ scaleInfo   ++ "\n\n"
                               ++ baseInfo    ++ "\n\n"
   in either print (putStrLn . showResult) . analyseProgram $ example

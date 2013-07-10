@@ -190,17 +190,6 @@ type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar)) a
 (~>) :: TVar -> Type -> Env -> Env
 x ~> t = \env -> env { typeMap = TSubst $ M.insert x t . getTSubst . typeMap $ env }
 
-instance Monoid Env where                    
-  -- |Substitutions can be chained by first recursively substituting the left substitution
-  --  over the right environment then unioning with the left invironment
-  p `mappend` q = Env { 
-    typeMap = typeMap p <> typeMap q,
-    flowMap = flowMap p <> flowMap q,
-    scaleMap = scaleMap p <> scaleMap q,
-    baseMap = baseMap p <> baseMap q
-  }
-      
-  mempty = Env { typeMap = mempty, flowMap = mempty, scaleMap = mempty, baseMap = mempty }
 
 -- * Algorithm W for Type Inference
 
@@ -568,6 +557,9 @@ newtype TSubst = TSubst {
     getTSubst :: Map TVar Type
   } deriving (Eq, Ord, Show)
 
+instance Subst TSubst TSubst where
+  subst m (TSubst r) = TSubst $ M.map (subst m) r
+  
 instance Subst FSubst Type where 
   subst m TBool            = TBool
   subst m (TInt s b)       = TInt  s b
@@ -625,21 +617,10 @@ instance Subst SSubst TSubst where
 
 instance Subst BSubst TSubst where
   subst m (TSubst r) = TSubst $ M.map (subst m) r
-
-  
--- |Substitutes a type for a type variable in a type.
-instance Subst (Map TVar Type) Type where
-  subst m TBool = TBool
-  subst m r@(TInt s b)     = TInt  s b
-  subst m v@(TVar n)       = M.findWithDefault v n m
-  subst m (TArr  v    a b) = TArr  v (subst m a) (subst m b)
-  subst m (TProd v nm a b) = TProd v nm (subst m a) (subst m b)
-  subst m (TSum  v nm a b) = TSum  v nm (subst m a) (subst m b)
-  subst m (TUnit v nm)     = TUnit v nm
   
 instance Monoid TSubst where
-  TSubst s2 `mappend` TSubst s1 = TSubst $ s2 `M.union` (subst s2 <$> s1)
-  mempty   = TSubst M.empty
+  s `mappend` t = TSubst $ getTSubst (subst s t) <> getTSubst (subst t s)
+  mempty        = TSubst $ M.empty
   
 data Env = Env { 
     typeMap  :: TSubst          -- ^ Type substitutions used in W
@@ -695,6 +676,19 @@ instance Subst SSubst Env where
 instance Subst BSubst Env where
   subst s env = env { typeMap = subst s (typeMap env), baseMap = s <> baseMap env }
 
+instance Monoid Env where                    
+  -- |Substitutions can be chained by first recursively substituting the left substitution
+  --  over the right environment then unioning with the left invironment
+  p `mappend` q = Env { 
+    typeMap = typeMap p <> typeMap q,
+    flowMap = flowMap p <> flowMap q,
+    scaleMap = scaleMap p <> scaleMap q,
+    baseMap = baseMap p <> baseMap q
+  }
+      
+  mempty = Env { typeMap = mempty, flowMap = mempty, scaleMap = mempty, baseMap = mempty }
+
+  
 instance Subst FSubst Constraint where
   subst s (FlowConstraint c) = FlowConstraint $ subst s c
   subst s v                  = v
