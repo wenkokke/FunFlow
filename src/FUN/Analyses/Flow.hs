@@ -33,22 +33,7 @@ data Flow
 data FlowConstraint
   = Flow Flow (Set Label)
   | FlowEquality Flow Flow
-    deriving (Eq, Ord, Show)
-    
-newtype FSubst = FSubst { 
-    getFSubst :: Map FVar Flow
-  } deriving (Eq, Ord, Show)
- 
-instance Subst FSubst Flow where
-  subst (FSubst m) = subst m
-  
-instance Subst FSubst FSubst where
-  subst m (FSubst s) = FSubst (subst m s)
-
- 
-instance Monoid FSubst where
-  mempty      = FSubst $ mempty
-  mappend s t = FSubst $ getFSubst (subst s t) <> getFSubst (subst t s)
+    deriving (Eq, Ord, Show) 
 
  
 -- |Solve the set of flow constraints obtained from the inference algorithm and 
@@ -56,7 +41,15 @@ instance Monoid FSubst where
 --  associated to a specific type that can occur multiple times in the program and each
 --  set constains program points that can reach this type.
 solveFlowConstraints :: Set FlowConstraint -> (FSubst, Set FlowConstraint)
-solveFlowConstraints cs = (mempty, cs)
+solveFlowConstraints cs = 
+  let filterRewrite = unionMap (\t -> case t of 
+                                        Flow (FVar v) r         -> S.singleton (v, FSet r) 
+                                        FlowEquality (FVar v) r -> S.singleton (v, r)
+                                        FlowEquality r (FVar v) -> S.singleton (v, r)
+                               ) cs
+      
+      
+  in (mempty, cs)
     
 instance Solver FlowConstraint FSubst where
   solveConstraints = solveFlowConstraints
@@ -81,12 +74,28 @@ printFlowInformation m =
   in prefix ++ content ++ suffix
   
 -- * Substitutions
-
-instance Subst (Map FVar Flow) Flow where
-  subst m v@(FVar n) = M.findWithDefault v n m
-  subst m v@(FSet _) = v
-  
+ 
 instance (Subst e Flow) => Subst e FlowConstraint where
   subst m (Flow n l) = Flow (subst m n) l
   subst m (FlowEquality a b) = FlowEquality (subst m a) (subst m b)
+  
+newtype FSubst = FSubst { 
+    getFSubst :: Map FVar Flow
+  } deriving (Eq, Ord, Show)
+ 
+instance Subst FSubst Flow where
+  subst m v@(FVar n) = M.findWithDefault v n (getFSubst m)
+  subst m v@(FSet _) = v
+  
+instance Subst FSubst FSubst where
+  subst m (FSubst s) = FSubst (subst m s)
+
+ 
+instance Monoid FSubst where
+  mempty      = FSubst $ mempty
+  mappend s t = FSubst $ getFSubst (subst s t) <> getFSubst (subst t s)
+
+instance Singleton FSubst (FVar, Flow) where
+  singleton (k,a) = FSubst (M.singleton k a)
+
   

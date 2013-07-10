@@ -60,3 +60,13 @@ unionMap f = S.unions . map f . S.toList
 
 (<&>) :: Functor f => f a -> (a -> b) -> f b
 (<&>) = flip fmap
+
+flip2 :: (a -> b -> c) -> (b -> a -> c)
+flip2 f = \b a -> f a b
+  
+flip3 :: (a -> b -> c -> d) -> (b -> c -> a -> d)
+flip3 f = \b c a -> f a b c 
+
+flip4 :: (a -> b -> c -> d -> e) -> (b -> c -> d -> a -> e)
+flip4 f = \b c d a -> f a b c d 
+

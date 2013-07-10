@@ -50,7 +50,7 @@ data Expr
 
   | Oper Op Expr Expr
   deriving (Eq)
-
+  
 data LR = L | R
   deriving (Eq)
 
@@ -166,17 +166,19 @@ showExpr cp =
         Let n e1 e2     -> printf "let %s = %s in %s" n (showExpr e1) (showExpr e2)
         ITE b e1 e2     -> printf "if %s then %s else %s" (showExpr b) (showExpr e1) (showExpr e2)
 
-        Con l nm  con   -> printf "%s%s" (showAnn l) (showCon cp nm con)
+        Con l nm  con   -> printf "%s" (showCon cp nm l con)
         Des nm exp des  -> printf "case %s of %s" (showExpr exp) (showDes cp nm des)
                                         
         Oper op x y -> printf "(%s %s %s)" (showExpr x) (show op) (showExpr y)                                    
   in showExpr
 
-showCon :: Bool -> Name -> Con -> String
-showCon cp nm (Unit)     = nm ++ "()"
-showCon cp nm (Prod x y) = printf "%s(%s, %s)" nm (showExpr cp x) (showExpr cp y)
-showCon cp nm (Sum L e)  = printf "%s.Left %s" nm (showExpr cp e)
-showCon cp nm (Sum R e)  = printf "%s.Right %s" nm (showExpr cp e)
+showCon :: Bool -> Name -> String -> Con -> String
+showCon cp nm l r = case r of 
+                         (Unit)     -> nm ++ "()" ++ (showAnn l)
+                         (Prod x y) -> printf "%s%s(%s, %s)" nm (showAnn l) (showExpr cp x) (showExpr cp y)
+                         (Sum L e)  -> printf "%s.Left%s %s" nm (showAnn l) (showExpr cp e)
+                         (Sum R e)  -> printf "%s.Right%s %s" nm (showAnn l) (showExpr cp e) 
+  where showAnn  ann = if cp then "[" ++ ann ++ "]" else ""
 
 showDes :: Bool -> Name -> Des -> String
 showDes cp nm (UnUnit e)           = printf "%s () -> %s" nm (showExpr cp e)
@@ -196,3 +198,6 @@ instance Show Lit where
                                then "(" ++ show s ++ "/" ++ show b ++ ")"
                                else " " ++ show s
                        else ""
+
+
+                       

@@ -45,7 +45,7 @@ data Base
 
 instance Show Scale where
   show SNil               = "Unit"
-  show (SVar v)           = "[" ++ v ++ "]"
+  show (SVar v)           = v
   show (SCon c)           = c 
                                               
   show (SMul SNil b)      = show b
@@ -498,13 +498,7 @@ printBaseInformation m =
   in prefix ++ content ++ suffix
   
 -- * Scale Substitutions
-  
-instance Subst (Map SVar Scale) Scale where
-  subst m v@(SVar n)   = M.findWithDefault v n m
-  subst m   (SMul a b) = SMul (subst m a) (subst m b)
-  subst m   (SInv a)   = SInv (subst m a)
-  subst m v@_ = v
-  
+    
 instance (Subst e Scale) => Subst e ScaleConstraint where
   subst m (ScaleEquality ss) = ScaleEquality $ subst m ss
 
@@ -512,24 +506,24 @@ newtype SSubst = SSubst {
     getSSubst :: Map SVar Scale
   } deriving (Eq, Ord, Show)
 
-instance Subst SSubst Scale where
-  subst (SSubst m) = subst m
-  
 instance Subst SSubst SSubst where
   subst m (SSubst s) = SSubst (subst m s)
   
+instance Subst SSubst Scale where
+  subst m v@(SVar n)   = M.findWithDefault v n (getSSubst m)
+  subst m v@(SCon _)   = v
+  subst m   (SMul a b) = SMul (subst m a) (subst m b)
+  subst m   (SInv a)   = SInv (subst m a)
+  subst m v@_ = v
+   
 instance Monoid SSubst where
   mempty      = SSubst mempty
   mappend s t = SSubst (getSSubst (subst s t) <> getSSubst (subst t s))
-  
+                
 instance Singleton SSubst (SVar,Scale) where
   singleton (k,a) = SSubst (M.singleton k a)
   
 -- * Base Substitutions
-
-instance Subst (Map BVar Base) Base where
-  subst m v@(BVar n) = M.findWithDefault v n m
-  subst m v@_ = v
   
 instance (Subst e Base) => Subst e BaseConstraint where
   subst m (BaseEquality ss)           = BaseEquality $ subst m ss
@@ -540,19 +534,20 @@ newtype BSubst = BSubst {
   getBSubst :: Map BVar Base
   } deriving (Eq, Ord, Show)
 
+instance Subst BSubst BSubst where
+  subst m (BSubst s) = BSubst (subst m s)
+  
 instance Subst BSubst Base where
-  subst (BSubst m) = subst m
+  subst m v@(BVar n) = M.findWithDefault v n (getBSubst m)
+  subst m v@(BCon _) = v
+  subst m BNil       = BNil
 
 instance Subst BSubst (Base, Base, Base) where
   subst m (a, b, c) = (subst m a, subst m b, subst m c)
-
-  
-instance Subst BSubst BSubst where
-  subst m (BSubst s) = BSubst (subst m s)
   
 instance Monoid BSubst where
   mempty      = BSubst mempty
   mappend s t = BSubst (getBSubst (subst s t) <> getBSubst (subst t s))
   
-instance Singleton BSubst (BVar,Base) where
+instance Singleton BSubst (BVar, Base) where
   singleton (k,a) = BSubst (M.singleton k a)
