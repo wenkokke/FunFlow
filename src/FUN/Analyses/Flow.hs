@@ -43,17 +43,16 @@ data FlowConstraint
 --  set constains program points that can reach this type.
 solveFlowConstraints :: Set FlowConstraint -> (FSubst, Set FlowConstraint)
 solveFlowConstraints c0 =
-  let 
-      info :: (Set (FVar, FVar), [(Label, Set FVar)], Set FVar, Set FlowConstraint)
-      info = flip F.foldMap c0 $ \r@(FlowEquality a b) -> 
-                                    case (a, b) of 
-                                      (FVar a, FVar b) -> (S.singleton (a, b), mempty, S.fromList [a, b], mempty)
-                                      (FVar a, FSet l) -> (mempty, map (\l -> (l, S.singleton a) ) (S.toList l), S.singleton a, mempty  )
-                                      (FSet l, FVar b) -> (mempty, map (\l -> (l, S.singleton b) ) (S.toList l), S.singleton b, mempty  )
-                                      (FSet a, FSet b) -> if a == b then (mempty, mempty, mempty, mempty) 
-                                                                    else (mempty, mempty, mempty, S.singleton r)
-      (equalities, programPoints, vars, c1) = info
-      
+  let (equalities, programPoints, vars, c1) = info where
+        info :: (Set (FVar, FVar), [(Label, Set FVar)], Set FVar, Set FlowConstraint)
+        info = flip F.foldMap c0 $ \r@(FlowEquality a b) -> 
+                                      case (a, b) of 
+                                        (FVar a, FVar b) -> (S.singleton (a, b), mempty, S.fromList [a, b], mempty)
+                                        (FVar a, FSet l) -> (mempty, map (\l -> (l, S.singleton a) ) (S.toList l), S.singleton a, mempty  )
+                                        (FSet l, FVar b) -> (mempty, map (\l -> (l, S.singleton b) ) (S.toList l), S.singleton b, mempty  )
+                                        (FSet a, FSet b) -> if a == b then (mempty, mempty, mempty, mempty) 
+                                                                      else (mempty, mempty, mempty, S.singleton r)
+        
       findReachable :: Set FVar -> Set FVar
       findReachable src = src >>~ \v -> equalities >>~ \(a, b) -> if v == a && not (b `S.member` src)
                                                                      then S.singleton b

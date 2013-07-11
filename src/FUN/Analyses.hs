@@ -121,18 +121,15 @@ showType cp =
                              then "{" ++ show s ++ "}"
                              else "{" ++ show s ++ "@" ++ show b ++ "}"
         TVar n -> n
-        TArr  v a b -> printf "%s -%s> %s" (wrap a) (printAnn v) (wrap b)
-            where
+        TArr  v a b -> printf "%s -%s> %s" (wrap a) (printAnn v) (wrap b) where
             wrap ty@(TArr _ _ _) = printf "(%s)" (showType ty)
             wrap ty              = showType ty
-        TProd v nm a b -> printf "%s%s(%s, %s)" nm (printAnn v) (wrap a) (wrap b)
-            where
+        TProd v nm a b -> printf "%s%s(%s, %s)" nm (printAnn v) (wrap a) (wrap b) where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
             wrap ty                 = showType ty
-        TSum v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b)
-            where
+        TSum v nm a b -> printf "%s%s %s %s" nm (printAnn v) (wrap a) (wrap b) where
             wrap ty@(TProd _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TSum  _ _ _ _) = printf "(%s)" (showType ty)
             wrap ty@(TArr _ _ _)    = printf "(%s)" (showType ty)
