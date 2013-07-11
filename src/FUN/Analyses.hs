@@ -64,18 +64,32 @@ prelude =
                , ds
                )
         
-data PrintAnnotations 
-  = TypeAnnotations
-  | FlowAnnotations
-  | ScaleAnnotations
-  | BaseAnnotations
-        
-printProgram :: Bool -> Program -> Env -> String
-printProgram annotations (Prog p) env = 
+data Annotations 
+  = FlowInformation
+  | MeasureInformation
+  | ProgramPoints
+    deriving (Ord, Eq, Show)
+type PrintAnnotations = Set Annotations
+
+printProgramPoints :: PrintAnnotations -> Bool
+printProgramPoints = S.member ProgramPoints
+
+printFlowInfo :: PrintAnnotations -> Bool
+printFlowInfo = S.member FlowInformation
+
+printMeasureInfo :: PrintAnnotations -> Bool
+printMeasureInfo = S.member MeasureInformation
+
+setAnnotations :: [Annotations] -> PrintAnnotations
+setAnnotations = S.fromList
+
+    
+printProgram :: PrintAnnotations -> Program -> Env -> String
+printProgram cp (Prog p) env = 
   let funcType (Decl nm e) = case M.lookup nm (getTSubst $ typeMap env) of
-                               Just r  -> nm ++ " :: " ++ (showType annotations r)
+                               Just r  -> nm ++ " :: " ++ (showType cp r)
                                Nothing -> error $ "printProgram: no matching type found for function \"" ++ nm ++ "\""
-      funcBody = showDecl annotations
+      funcBody = showDecl (printProgramPoints cp)
       prefix = "{\n"
       suffix = "}"
       
@@ -102,24 +116,65 @@ data Type
   | TUnit Flow Name
   deriving (Eq, Ord)
 
+-- |Representation for possible errors in algorithm W.
+data TypeError
+  = CannotDestruct  Type      -- ^ thrown when attempting to destruct a non-product
+  | PatternError    TVar TVar -- ^ thrown when pattern matching on a different type
+  | UnboundVariable TVar      -- ^ thrown when unknown variable is encountered
+  | OccursCheck     TVar Type -- ^ thrown when occurs check in unify fails
+  | CannotUnify     Type Type -- ^ thrown when types cannot be unified
+  | OtherError      String    -- ^ stores miscellaneous errors
+  deriving Eq
+
+  
+-- |Returns the set of free type variables in a type.
+ftv :: Type -> [TVar]
+ftv TBool           = [ ]
+ftv (TInt _ _)      = [ ]
+ftv (TVar  n)       = [n]
+ftv (TArr  _   a b) = L.union (ftv a) (ftv b)
+ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
+ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
+ftv (TUnit _ _)     = [ ]
+
+-- |Extract the type from primitive literals
+typeOf :: Lit -> Type
+typeOf (Bool _) = TBool
+typeOf (Integer s b _) = TInt s b
+
+  
 instance Show Type where
-  show = showType False
+  show = showType mempty
 
 -- |Pretty print a given type. The boolean parameter tells weither to print type 
 --  annotations (when True) or not (when False). 
-showType :: Bool -> Type -> String
+showType :: PrintAnnotations -> Type -> String
 showType cp =
-  let printAnn (FVar s) = if cp then "{" ++ s ++ "}" else ""
-      printAnn (FSet l) = "{" ++ (L.foldr1 (\x xs -> x ++ ", " ++ xs) . map showLabel . S.toList $ l) ++ "}" where
-         showLabel l = "[" ++ l ++ "]"
+  let printAnn (FVar s) = if printFlowInfo cp 
+                             then "{" ++ s ++ "}" 
+                             else ""
+      printAnn (FSet l) = if printFlowInfo cp 
+                             then "[" ++ (L.foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ l) ++ "]" 
+                             else "" where
+
       showType ty = case ty of
         TBool -> "Bool"
         TInt s b -> "Integer" ++ showScaleBase where
-          showScaleBase = if s == SNil
-                             then "" else
-                          if b == BNil
-                             then "{" ++ show s ++ "}"
-                             else "{" ++ show s ++ "@" ++ show b ++ "}"
+          showScaleBase = if printMeasureInfo cp
+                             then if s == SNil
+                                     then "" else
+                                  if b == BNil
+                                     then case s of
+                                             SVar p -> "{" ++ p ++ "}"
+                                             _      -> "[" ++ show s ++ "]"
+                                     else case (s, b) of
+                                             (SVar p, BVar q) -> "{" ++ p ++ "@" ++ q ++ "}"
+                                             (SVar p,      _) -> "{" ++ p ++ "}@[" ++ show b ++ "]"
+                                             (_     , BVar q) -> "[" ++ show s ++ "]@{" ++ q ++ "}"
+                                             (_     ,      _) -> "[" ++ show s ++ "@" ++ show b ++ "]"
+                                             
+                                             
+                             else ""      
         TVar n -> n
         TArr  v a b -> printf "%s -%s> %s" (wrap a) (printAnn v) (wrap b) where
             wrap ty@(TArr _ _ _) = printf "(%s)" (showType ty)
@@ -136,31 +191,6 @@ showType cp =
             wrap ty                 = showType ty
         TUnit v nm -> printf "%s%s()" nm (printAnn v)
   in showType
-
--- |Returns the set of free type variables in a type.
-ftv :: Type -> [TVar]
-ftv TBool           = [ ]
-ftv (TInt _ _)      = [ ]
-ftv (TVar  n)       = [n]
-ftv (TArr  _   a b) = L.union (ftv a) (ftv b)
-ftv (TProd _ _ a b) = L.union (ftv a) (ftv b)
-ftv (TSum  _ _ a b) = L.union (ftv a) (ftv b)
-ftv (TUnit _ _)     = [ ]
-
--- |Extract the type from primitive literals
-typeOf :: Lit -> Type
-typeOf (Bool _) = TBool
-typeOf (Integer s b _) = TInt s b
-
--- |Representation for possible errors in algorithm W.
-data TypeError
-  = CannotDestruct  Type      -- ^ thrown when attempting to destruct a non-product
-  | PatternError    TVar TVar -- ^ thrown when pattern matching on a different type
-  | UnboundVariable TVar      -- ^ thrown when unknown variable is encountered
-  | OccursCheck     TVar Type -- ^ thrown when occurs check in unify fails
-  | CannotUnify     Type Type -- ^ thrown when types cannot be unified
-  | OtherError      String    -- ^ stores miscellaneous errors
-  deriving Eq
 
 instance Error TypeError where
   noMsg       = OtherError "no message"
@@ -210,12 +240,19 @@ analyseProgram (Prog ds) =
                                                    , subst s1 c0 `union` c1
                                                    )
 
-  in refreshAll . withFreshVars $ do (env, lib) <- prelude
+  in refreshAll . withFreshVars $ do -- |Initialize prelude for standard measurement functions
+                                     (env, lib) <- prelude
 
+                                     -- |Label both the incoming program and the prelude with program points
                                      let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
 
+                                     -- |Run W on each of the top level Decls of the Program, chaining the 
+                                     --  results together, making each Decl available in the invironment as typed 
+                                     --  expressions for the Decls below
+                                     --  
                                      (env, c0) <- foldM analyseDecl (env, empty) $ labeledDecls
                                      
+                                     -- |Solve the various constraints
                                      let (f_s1, f_c1) = solveConstraints . extractFlowConstraints $ c0
                                          c1 = S.map FlowConstraint f_c1                                        
                                          
@@ -224,7 +261,8 @@ analyseProgram (Prog ds) =
                                      
                                          (b_s3, b_c3) = solveConstraints . extractBaseConstraints  $ c0
                                          c3 = S.map BaseConstraint b_c3
-                                     
+                                     -- Return the refined environment, the input program together with prelude and
+                                     -- a set of unsolved constraints.
                                      return ( subst b_s3 . subst s_s2 . subst f_s1 $ env 
                                             , Prog $ labeledLib ++ labeledDecls
                                             , simplify $ c1 `union` c2 `union` c3

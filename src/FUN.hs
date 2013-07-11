@@ -12,6 +12,7 @@ import FUN.Parsing   -- ^ Parser
 import FUN.Labeling  -- ^ Labeling
 import FUN.Analyses 
   ( analyseProgram, printProgram
+  , PrintAnnotations (..), Annotations (..), setAnnotations
   , Env, Constraint
   , extractFlowConstraints
   , extractScaleConstraints
@@ -29,14 +30,18 @@ import FUN.Analyses.Measure
 import Data.Set (Set)
   
   
--- |Runs the analysis on the example program code below. The results `scale constraints` and `base constraints`
---  print all the generated constraints with their annotation variables replaced with concrete annotations.
---  If everything goes well, all annotation variables have been closed and then the results under `program`  
---  are much more interesting. However, if constraint solving does get stuck, these sections give valuable 
---  information on the relation between the annotations that did get solved.
+-- |Runs the analysis on the example program code (down below) and prints an 
+--  annotated version to stdout. Things between curly braces { } denote unresolved 
+--  variables while stuff between brackets [ ] denotes concrete information.
+--  
+ 
+
 main :: IO ()
 main = 
-  let annotations = True -- ^ Show annotations on Types/Terms. Makes the resulting types very verbose.
+  let annotations = setAnnotations [ ProgramPoints            -- ^Set which annotations to print. Leave
+                                   , FlowInformation          --  empty to just print the W-inferred 
+                                   , MeasureInformation       --  types.
+                                   ]
         
       showResult :: (Env, Program, Set Constraint) -> String
       showResult (m, p, w) =  let programInfo = "program = " ++ printProgram annotations p m
@@ -56,7 +61,7 @@ main =
 -- * Example code
   
 -- |Selected Examples to show our code in action
-example = Prog $ case 2 of 
+example = Prog $ case 1 of 
                    1 -> exMeasure       -- ^ Main program showing our 'units of measure' capabilities
                    2 -> exEverything    -- ^ A whole bunch of random snippets, showing our language and program point tracking
                    3 -> exLoop True     -- ^ Loop program from the book, unfolded to show non-toplevel statements
