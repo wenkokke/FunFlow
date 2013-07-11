@@ -61,6 +61,11 @@ unionMap f = S.unions . map f . S.toList
 (<&>) :: Functor f => f a -> (a -> b) -> f b
 (<&>) = flip fmap
 
+(>>~) :: (Ord a, Ord b) => Set a -> (a -> Set b) -> Set b
+(>>~) = flip unionMap
+infixl 1 >>~
+
+
 flip2 :: (a -> b -> c) -> (b -> a -> c)
 flip2 f = \b a -> f a b
   

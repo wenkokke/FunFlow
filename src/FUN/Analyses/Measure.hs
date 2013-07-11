@@ -247,11 +247,6 @@ solveScaleConstraints = wrap (loop iterationCount mempty)  where
     unpack = S.map (\(ScaleEquality gr) -> gr)
 
 type ScaleEquality = Set Scale
-    
-(>>~) :: (Ord a, Ord b) => Set a -> (a -> Set b) -> Set b
-(>>~) = flip unionMap
-infixl 1 >>~
-
 
 unifyScaleEquality :: ScaleEquality -> Set ScaleEquality
 unifyScaleEquality cs =
@@ -534,7 +529,8 @@ instance Subst SSubst Scale where
   subst m v@_          = v
    
 instance Monoid SSubst where
-  s `mappend` t = SSubst $ getSSubst (subst s t) <> getSSubst (subst t s)
+  s `mappend` t = SSubst $ let m = subst s t 
+                           in getSSubst (subst m s) `M.union` getSSubst m 
   mempty        = SSubst $ M.empty
                 
 instance Singleton SSubst (SVar,Scale) where
@@ -563,7 +559,8 @@ instance Subst BSubst (Base, Base, Base) where
   subst m (a, b, c) = (subst m a, subst m b, subst m c)
   
 instance Monoid BSubst where
-  s `mappend` t = BSubst $ getBSubst (subst s t) <> getBSubst (subst t s)
+  s `mappend` t = BSubst $ let m = subst s t 
+                           in getBSubst (subst m s) `M.union` getBSubst m
   mempty        = BSubst $ mempty
   
 instance Singleton BSubst (BVar, Base) where

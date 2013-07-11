@@ -9,10 +9,12 @@ module FUN.Analyses.Flow where
 import FUN.Analyses.Utils
 
 import Data.Monoid
+import Debug.Trace
 
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
+import qualified Data.Foldable as F
 
 import Data.Map (Map)
 import Data.Set (Set, union)
@@ -31,8 +33,7 @@ data Flow
     
 -- |Flow constraints generated for Control Flow Analysis 
 data FlowConstraint
-  = Flow Flow (Set Label)
-  | FlowEquality Flow Flow
+  = FlowEquality Flow Flow
     deriving (Eq, Ord, Show) 
 
  
@@ -41,16 +42,48 @@ data FlowConstraint
 --  associated to a specific type that can occur multiple times in the program and each
 --  set constains program points that can reach this type.
 solveFlowConstraints :: Set FlowConstraint -> (FSubst, Set FlowConstraint)
-solveFlowConstraints cs = 
-  let filterRewrite = unionMap (\t -> case t of 
-                                        Flow (FVar v) r         -> S.singleton (v, FSet r) 
-                                        FlowEquality (FVar v) r -> S.singleton (v, r)
-                                        FlowEquality r (FVar v) -> S.singleton (v, r)
-                               ) cs
+solveFlowConstraints c0 =
+  let 
+      info :: (Set (FVar, FVar), [(Label, Set FVar)], Set FVar, Set FlowConstraint)
+      info = flip F.foldMap c0 $ \r@(FlowEquality a b) -> 
+                                    case (a, b) of 
+                                      (FVar a, FVar b) -> (S.singleton (a, b), mempty, S.fromList [a, b], mempty)
+                                      (FVar a, FSet l) -> (mempty, map (\l -> (l, S.singleton a) ) (S.toList l), S.singleton a, mempty  )
+                                      (FSet l, FVar b) -> (mempty, map (\l -> (l, S.singleton b) ) (S.toList l), S.singleton b, mempty  )
+                                      (FSet a, FSet b) -> if a == b then (mempty, mempty, mempty, mempty) 
+                                                                    else (mempty, mempty, mempty, S.singleton r)
+      (equalities, programPoints, vars, c1) = info
       
+      findReachable :: Set FVar -> Set FVar
+      findReachable src = src >>~ \v -> equalities >>~ \(a, b) -> if v == a && not (b `S.member` src)
+                                                                     then S.singleton b
+                                                                     else
+                                                                  if v == b && not (a `S.member` src)
+                                                                     then S.singleton a
+                                                                     else mempty
+        
       
-  in (mempty, cs)
-    
+      reachables :: Set (Label, Set FVar)
+      reachables = S.fromList $ growReachables programPoints where      
+        growReachables cs = 
+          let round = map (\(nm, v) -> findReachable v) cs
+              
+              pass = map (S.null) round        
+          in if and pass
+                then cs
+                else growReachables $ zipWith (\(nm, a) b -> (nm, a `S.union` b) ) cs round
+      
+      findLabels :: FVar -> Set Label
+      findLabels v = reachables >>~ \(nm, r) -> if S.member v r
+                                                   then S.singleton nm
+                                                   else mempty
+      
+      filterUnreachable = M.mapMaybe $ \a -> case a of FSet l -> if S.null l
+                                                                    then Nothing
+                                                                    else Just a
+                            
+      subst = filterUnreachable . flip M.fromSet vars $ \v -> FSet $ findLabels v 
+  in (FSubst subst, c1) 
 instance Solver FlowConstraint FSubst where
   solveConstraints = solveFlowConstraints
     
@@ -61,40 +94,55 @@ instance Solver FlowConstraint FSubst where
 printFlowInformation :: Set FlowConstraint -> String
 printFlowInformation m =
   let prefix = "{\n"
-      printSet v = "[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]"
+      {-
+      printSet v = "[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap showFlow . S.toList $ v) ++ "]" where
+        showFlow (FLab l) = l
+        showFlow (FVar v) = v
+        showFlow (FSet s) = printSet s
+        -}
+      printSet v = "[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]" where  
+        
       printRewrite f v = "  {" ++ f ++ "}\t~> " ++ printSet v ++ "\n"
+
       content = S.foldr (\r as -> case r of 
-                                       Flow (FVar f) v -> printRewrite f v ++ as
-                                       FlowEquality (FVar a) (FVar b) -> "  {" ++ a ++ "} ~  {" ++ b ++ "}\n" 
-                                       FlowEquality (FVar f) (FSet v) -> printRewrite f v ++ as
-                                       FlowEquality (FSet v) (FVar f) -> printRewrite f v ++ as
-                                       FlowEquality (FSet p) (FSet q) -> "  " ++ printSet p ++ " ~ " ++ printSet q ++ "\n"
-                        ) "" m
+                                       FlowEquality (FVar a) (FVar b) -> "  {" ++ a ++ "}\t~  {" ++ b ++ "}\n" ++ as
+                                       FlowEquality (FSet p) (FSet q) -> "  " ++ printSet p ++ " ~ " ++ printSet q ++ "\n" ++ as
+    --                                   FlowEquality (FLab a) (FLab b) -> "  {" ++ a ++ "}\t~  {" ++ b ++ "}\n" ++ as
+                                       FlowEquality (FVar f) (FSet r) -> printRewrite f r ++ as
+                                       FlowEquality (FSet r) (FVar f) -> printRewrite f r ++ as
+  --                                     FlowEquality (FLab a) (FSet b) -> "  [" ++ a ++ "]\t~  " ++ printSet b ++ "\n" ++ as   
+  --                                     FlowEquality (FSet a) (FLab b) -> printSet a ++ "\t~ [" ++ b ++ "]\n" ++ as
+--                                       FlowEquality (FVar f) (FLab l) -> printRewrite f (S.singleton l) ++ as
+--                                       FlowEquality (FLab l) (FVar f) -> printRewrite f (S.singleton l) ++ as
+                      ) "" m 
       suffix = "}"
   in prefix ++ content ++ suffix
   
 -- * Substitutions
  
 instance (Subst e Flow) => Subst e FlowConstraint where
-  subst m (Flow n l) = Flow (subst m n) l
   subst m (FlowEquality a b) = FlowEquality (subst m a) (subst m b)
-  
 newtype FSubst = FSubst { 
     getFSubst :: Map FVar Flow
   } deriving (Eq, Ord, Show)
  
 instance Subst FSubst Flow where
   subst m v@(FVar n) = M.findWithDefault v n (getFSubst m)
+--  subst m v@(FLab _) = v
   subst m v@(FSet _) = v
   
 instance Subst FSubst FSubst where
-  subst m (FSubst s) = FSubst (subst m s)
+  subst m (FSubst q) = FSubst $ subst m q
+ 
+ 
+    
 
  
 instance Monoid FSubst where
-  mempty      = FSubst $ mempty
-  mappend s t = FSubst $ getFSubst (subst s t) <> getFSubst (subst t s)
-
+  s `mappend` t = FSubst $ let m = subst s t 
+                           in getFSubst (subst m s) `M.union` getFSubst m
+  mempty        = FSubst $ mempty
+  
 instance Singleton FSubst (FVar, Flow) where
   singleton (k,a) = FSubst (M.singleton k a)
 
