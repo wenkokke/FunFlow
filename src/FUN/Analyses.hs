@@ -225,8 +225,10 @@ instance Rewrite Constraint where
   simplify (ScaleConstraint ss) = ScaleConstraint $ simplify ss
   simplify v@_ = v
      
--- |Runs Algorithm W on a list of declarations, making each previous
---  declaration an available expression in the next.
+-- |The main function. Takes an untyped program as argument and returns 
+--    1) an environment containing
+--    2) a whole lot more!
+
 analyseProgram :: Program -> Either TypeError (Env, Program, Set Constraint)
 analyseProgram (Prog ds) =
   let analyseDecl :: (Env, Set Constraint) -> Decl-> Analysis (Env, Set Constraint)
@@ -240,16 +242,15 @@ analyseProgram (Prog ds) =
                                                    , subst s1 c0 `union` c1
                                                    )
 
-  in refreshAll . withFreshVars $ do -- |Initialize prelude for standard measurement functions
+  in refreshAll . withFreshVars $ do -- |Initialize pre-typed prelude for standard measurement functions
                                      (env, lib) <- prelude
 
                                      -- |Label both the incoming program and the prelude with program points
                                      let (labeledLib, labeledDecls) = runLabel $ (lib, ds)
 
                                      -- |Run W on each of the top level Decls of the Program, chaining the 
-                                     --  results together, making each Decl available in the invironment as typed 
-                                     --  expressions for the Decls below
-                                     --  
+                                     --  results together, making the type of each Decl available to the Decls
+                                     --  below it via the invironment.
                                      (env, c0) <- foldM analyseDecl (env, empty) $ labeledDecls
                                      
                                      -- |Solve the various constraints
@@ -261,8 +262,8 @@ analyseProgram (Prog ds) =
                                      
                                          (b_s3, b_c3) = solveConstraints . extractBaseConstraints  $ c0
                                          c3 = S.map BaseConstraint b_c3
-                                     -- Return the refined environment, the input program together with prelude and
-                                     -- a set of unsolved constraints.
+                                     -- |Return the refined environment, the input program together with prelude and
+                                     --  a set of unsolved constraints.
                                      return ( subst b_s3 . subst s_s2 . subst f_s1 $ env 
                                             , Prog $ labeledLib ++ labeledDecls
                                             , simplify $ c1 `union` c2 `union` c3

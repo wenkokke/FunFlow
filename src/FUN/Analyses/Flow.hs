@@ -94,12 +94,7 @@ instance Solver FlowConstraint FSubst where
 printFlowInformation :: Set FlowConstraint -> String
 printFlowInformation m =
   let prefix = "{\n"
-      {-
-      printSet v = "[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . fmap showFlow . S.toList $ v) ++ "]" where
-        showFlow (FLab l) = l
-        showFlow (FVar v) = v
-        showFlow (FSet s) = printSet s
-        -}
+      
       printSet v = "[" ++ (foldr1 (\x xs -> x ++ ", " ++ xs) . S.toList $ v) ++ "]" where  
         
       printRewrite f v = "  {" ++ f ++ "}\t~> " ++ printSet v ++ "\n"
@@ -107,13 +102,8 @@ printFlowInformation m =
       content = S.foldr (\r as -> case r of 
                                        FlowEquality (FVar a) (FVar b) -> "  {" ++ a ++ "}\t~  {" ++ b ++ "}\n" ++ as
                                        FlowEquality (FSet p) (FSet q) -> "  " ++ printSet p ++ " ~ " ++ printSet q ++ "\n" ++ as
-    --                                   FlowEquality (FLab a) (FLab b) -> "  {" ++ a ++ "}\t~  {" ++ b ++ "}\n" ++ as
                                        FlowEquality (FVar f) (FSet r) -> printRewrite f r ++ as
                                        FlowEquality (FSet r) (FVar f) -> printRewrite f r ++ as
-  --                                     FlowEquality (FLab a) (FSet b) -> "  [" ++ a ++ "]\t~  " ++ printSet b ++ "\n" ++ as   
-  --                                     FlowEquality (FSet a) (FLab b) -> printSet a ++ "\t~ [" ++ b ++ "]\n" ++ as
---                                       FlowEquality (FVar f) (FLab l) -> printRewrite f (S.singleton l) ++ as
---                                       FlowEquality (FLab l) (FVar f) -> printRewrite f (S.singleton l) ++ as
                       ) "" m 
       suffix = "}"
   in prefix ++ content ++ suffix
@@ -128,7 +118,6 @@ newtype FSubst = FSubst {
  
 instance Subst FSubst Flow where
   subst m v@(FVar n) = M.findWithDefault v n (getFSubst m)
---  subst m v@(FLab _) = v
   subst m v@(FSet _) = v
   
 instance Subst FSubst FSubst where
