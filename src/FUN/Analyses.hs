@@ -303,7 +303,7 @@ analyse exp env = case exp of
 
                         (t0, s0, c0) <- analyse e . (f ~> TArr b_0 a_x a_0) . (x ~> a_x) $ env
 
-                        (    s1, c1) <- t0 `u` subst s0 a_0
+                        (    s1, c1) <- t0 `unify` subst s0 a_0
 
                         let b_1 = subst (s1 <> s0) b_0
 
@@ -320,7 +320,7 @@ analyse exp env = case exp of
                         a <- fresh;
                         b <- fresh
 
-                        (    s3, c3) <- subst s2 t1 `u` TArr b t2 a
+                        (    s3, c3) <- subst s2 t1 `unify` TArr b t2 a
 
                         return ( subst s3 a
                                , s3 <> s2 <> s1
@@ -344,8 +344,8 @@ analyse exp env = case exp of
                         (t1, s1, c1) <- analyse e1 . subst s0 $ env
                         (t2, s2, c2) <- analyse e2 . subst (s1 <> s0) $ env
 
-                        (    s3, c3) <- subst (s2 <> s1) t0 `u` TBool
-                        (    s4, c4) <- subst s3 t2 `u` subst (s3 <> s2) t1;
+                        (    s3, c3) <- subst (s2 <> s1) t0 `unify` TBool
+                        (    s4, c4) <- subst s3 t2 `unify` subst (s3 <> s2) t1;
 
                         return ( subst (s4 <> s3) t2
                                , s4 <> s3 <> s2 <> s1
@@ -402,7 +402,7 @@ analyse exp env = case exp of
 
                                   b_0 <- fresh
 
-                                  (    s2, c2) <- t1 `u` TUnit b_0 nm
+                                  (    s2, c2) <- t1 `unify` TUnit b_0 nm
 
                                   (t3, s3, c3) <- analyse e2 . subst (s2 <> s1) $ env
 
@@ -420,7 +420,7 @@ analyse exp env = case exp of
 
                                     b_0 <- fresh
 
-                                    (    s2, c2) <- t1 `u` TProd b_0 nm a_x a_y
+                                    (    s2, c2) <- t1 `unify` TProd b_0 nm a_x a_y
                                     (t3, s3, c3) <- analyse e2 . (y ~> a_y) . (x ~> a_x) . subst (s2 <> s1) $ env
 
                                     return ( t3
@@ -437,12 +437,12 @@ analyse exp env = case exp of
 
                                               b_0 <- fresh
 
-                                              (    s2, c2) <- t1 `u` TSum b_0 nm a_x a_y
+                                              (    s2, c2) <- t1 `unify` TSum b_0 nm a_x a_y
 
                                               (tx, s3, c3) <- analyse ex . (x ~> a_x) . subst (s2 <> s1) $ env
                                               (ty, s4, c4) <- analyse ey . (y ~> a_y) . subst (s3 <> s2 <> s1) $ env
 
-                                              (    s5, c5) <- tx `u` ty
+                                              (    s5, c5) <- tx `unify` ty
 
                                               return ( subst s5 tx
                                                      , s5 <> s4 <> s3 <> s2 <> s1
@@ -463,11 +463,11 @@ analyse exp env = case exp of
                     by <- fresh
 
                     (t1, s1, c1) <- analyse x $ env
-                    (    s2, c2) <- t1 `u` TInt rx bx
+                    (    s2, c2) <- t1 `unify` TInt rx bx
 
 
                     (t3, s3, c3) <- analyse y . subst (s2 <> s1) $ env
-                    (    s4, c4) <- t3 `u` TInt ry by
+                    (    s4, c4) <- t3 `unify` TInt ry by
 
                     rz <- fresh
                     bz <- fresh
@@ -739,40 +739,40 @@ instance Subst BSubst Constraint where
 
 -- |Unification as per Robinson's unification algorithm.
 
-u :: Type -> Type -> Analysis (Env, Set Constraint)
-u TBool TBool = return $ mempty
-u (TInt r1 b1) (TInt r2 b2) = return (mempty, scaleEquality [r1, r2] `union` baseEquality [b1, b2])
-u (TArr p1 a1 b1) (TArr p2 a2 b2)
+unify :: Type -> Type -> Analysis (Env, Set Constraint)
+unify TBool TBool = return $ mempty
+unify (TInt r1 b1) (TInt r2 b2) = return (mempty, scaleEquality [r1, r2] `union` baseEquality [b1, b2])
+unify (TArr p1 a1 b1) (TArr p2 a2 b2)
                   = do let c0 = flowEquality p1 p2
-                       (s1, c1) <- a1 `u` a2
-                       (s2, c2) <- subst s1 b1 `u` subst s1 b2
+                       (s1, c1) <- a1 `unify` a2
+                       (s2, c2) <- subst s1 b1 `unify` subst s1 b2
                        return (s2 <> s1, c0 `union` c1 `union` c2)
-u t1@(TProd p1 n1 x1 y1) t2@(TProd p2 n2 x2 y2)
+unify t1@(TProd p1 n1 x1 y1) t2@(TProd p2 n2 x2 y2)
                   = if n1 == n2
                     then do let c0 = flowEquality p1 p2
-                            (s1, c1) <- x1 `u` x2;
-                            (s2, c2) <- subst s1 y1 `u` subst s1 y2
+                            (s1, c1) <- x1 `unify` x2;
+                            (s2, c2) <- subst s1 y1 `unify` subst s1 y2
                             return (s2 <> s1, c0 `union` c1 `union` c2)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TSum p1 n1 x1 y1) t2@(TSum p2 n2 x2 y2)
+unify t1@(TSum p1 n1 x1 y1) t2@(TSum p2 n2 x2 y2)
                   = if n1 == n2
                     then do let c0 = flowEquality p1 p2
-                            (s1, c1) <- x1 `u` x2;
-                            (s2, c2) <- subst s1 y1 `u` subst s1 y2
+                            (s1, c1) <- x1 `unify` x2;
+                            (s2, c2) <- subst s1 y1 `unify` subst s1 y2
                             return (s2 <> s1, c0 `union` c1 `union` c2)
                     else do throwError (CannotUnify t1 t2)
-u t1@(TUnit p1 n1) t2@(TUnit p2 n2)
+unify t1@(TUnit p1 n1) t2@(TUnit p2 n2)
                   = if n1 == n2
                     then do let c0 = flowEquality p1 p2
                             return $ (mempty, c0)
                     else do throwError (CannotUnify t1 t2)
-u t1 t2@(TVar n)
+unify t1 t2@(TVar n)
   | n `occurs` t1 && t1 /= t2 = throwError (OccursCheck n t1)
-  | otherwise     = return $ (singleton (n, t1), empty)
-u t1@(TVar n) t2
+  | otherwise                 = return $ (singleton (n, t1), empty)
+unify t1@(TVar n) t2
   | n `occurs` t2 && t1 /= t2 = throwError (OccursCheck n t2)
-  | otherwise     = return $ (singleton (n, t2), empty)
-u t1 t2           = throwError (CannotUnify t1 t2)
+  | otherwise                 = return $ (singleton (n, t2), empty)
+unify t1 t2                   = throwError (CannotUnify t1 t2)
 
 -- |Occurs check for Robinson's unification algorithm.
 occurs :: TVar -> Type -> Bool
