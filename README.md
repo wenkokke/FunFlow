@@ -1,7 +1,6 @@
 # FunFlow
 
-An implementation of Control-Flow and Units of Measure Analysis for a Simple Functional Programming Language
-By Wout Elsinghorst and Pepijn Kokke.
+*An implementation of Control-Flow and Units of Measure Analysis for a Simple Functional Programming Language by Wout Elsinghorst and Pepijn Kokke.*
 
 [![Build Status](https://travis-ci.org/pepijnkokke/FunFlow.png?branch=master)](https://travis-ci.org/pepijnkokke/FunFlow)
 
