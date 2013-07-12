@@ -74,11 +74,18 @@ src/Analyses.hs:`analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)`
   for the respective analyses.
 
 src/Analyses.hs:`analyseProgram :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)`
-  Run W on a bunch of top level declarations, finalizing the Supply monads.
+  Run W on a bunch of top level declarations and finalize the Supply monads. Every Decl
+  has the inferred type of the Decls above it available to it via the environment. Type 
+  checking happens in a single pass, so Decls don't have access to the types of Decls 
+  defined below them.
   
-src/Analyses.hs:`u :: Type -> Type -> Analysis Env`
-  The function `u` tries to create a unification for its two arguments. If it fails,
-  an error is raised. Is used only by src/Analyses.hs:analysis
+src/Analyses.hs:`unify :: Type -> Type -> Analysis (Env, Set Constraint)`
+  The function `unify` tries to create a unification for its two arguments. It returns
+  an substituion such that applying the substitution on both arguments makes them have
+  equal types in the underlying type system, but their type annotations are not unified
+  yet. Instead, equality constraints are generated which will be used by a specific 
+  constraint solver in a later phase to unify the annotations in a proper way. If type
+  unification is impossible, an error is raised. Is used only by src/Analyses.hs:analysis
   
 src/Analyses.hs:`prelude :: Analysis (Env, [Decl])`
   Builds an initial environment containing the builtin functions used to give unit
