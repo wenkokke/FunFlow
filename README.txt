@@ -3,6 +3,7 @@ Automatic Program Analysis 2013: Type and Effect Systems
 Authors: Wout Elsinghorst
          Pepijn Kokke
          
+
          
 Description 
 -----------
@@ -23,7 +24,7 @@ These annotations are propagated and combined during type inference to aid the p
 in writing unit-correct programs. 
 
 The implementation of these analyses follows a two stage approach. In the first stage
-types are inferred and constraints are generated  in while in the second stage the constraints
+types are inferred and constraints are generated while in the second stage the constraints
 are solved. The type inference is done by an our own implementation of algorithm W.
 
 The UMA has some none-trivial constraint solving code. The commutativity of unit 
@@ -34,7 +35,23 @@ fully unified. Unfortunately, this rewriting is not fully complete and it will p
 leave some of the more advanced annotations stuck. Luckily, it's not completely trivial to
 trigger the generation of unsolvable constraints, and even then, the unsolved constraints
 are usually descriptive enough to allow the programmer to manually judge the unit correctness
-of his program.
+of his or her program.
+
+
+
+Program Input / Program Output
+-------------  ---------------
+
+The file src/FUN.hs contains the program on which the analysis is run. The exact form of this
+program can be adjusted by tweaking the case statement in `example`. One can choose between
+a program demonstrating the use of units of measurement and between a program showing various
+language constructs, which can be used to check flow analysis.
+
+The output of the program is a typed and annotated version of the input program. The convention is
+that annotation variables are put between curly braces { } while concrete annotations are put
+between brackets [ ].
+
+
 
 Code Layout / Points of Interest
 -----------   ------------------
@@ -42,7 +59,7 @@ Code Layout / Points of Interest
 src/FUN.hs:`main :: IO ()`
   Loads the example code. Prints the results.
   
-src/FUN.hs.`example :: [Decl]`
+src/FUN.hs.`example :: Program`
   A switch statement coming with a collection of pre-written programs to test the code.
   Use option 1 to see measurement analysis in action.
 
@@ -71,7 +88,7 @@ src/Analysis.hs:`type Analysis a = ErrorT TypeError (SupplyT FVar (Supply TVar))
   
 src/Analyses.hs:`analyse :: Expr -> Env -> Analysis (Type, Env, Set Constraint)`
   Run W on a given expression and generate the necessary constraints
-  for the respective analyses.
+  for the respective annotation analyses.
 
 src/Analyses.hs:`analyseProgram :: [Decl] -> Either TypeError (Env, Prog, Set Constraint)`
   Run W on a bunch of top level declarations and finalize the Supply monads. Every Decl
@@ -93,29 +110,22 @@ src/Analyses.hs:`prelude :: Analysis (Env, [Decl])`
   
   
   
-src/Analyses/Flow.hs:`solveFlowConstraints :: Set FlowConstraint -> Map FVar (String, Set Label)`
-  Takes a set of FlowConstraints and builds a mapping from Flow Annotation Variables to the 
-  sets of Program Points that reach this annotation. The String argument keeps track of
-  which constructor was used to construct the Program Point.
-  
-src/Analyses/Flow.hs:`printFlowInformation :: Map FVar (String, Set Label) -> String`
-  Prints the annotation map. Names between curly braces represent annotation variables, 
-  and names between brackets represent program points. This results in a mapping 
-     { n } -> [ a, b ]
-  This indicates that the flow variable n has been reached by program points [a] and [b].
-  
+src/Analyses/Flow.hs:`solveFlowConstraints :: Set FlowConstraint -> (FSubst, Set FlowConstraint)`
+  Takes a set of FlowConstraints and builds a substitution mapping each flow variable to the set
+  program points reaching this variable.
+    
 
   
-src/Analyses/Measure.hs:`solveScaleConstraints :: Set ScaleConstraint -> SSubst`
-  From a set of ScaleConstraints, build a substitution that unifies all matching annotations.
+src/Analyses/Measure.hs:`solveScaleConstraints :: Set ScaleConstraint -> (SSubst, Set ScaleConstraint)`
+  From a set of ScaleConstraints, build a scale substitution that unifies all matching annotations.
   The resulting substitution is then applied to the resulting type environment to obtain a
-  final annotated type environment.
+  final annotated type environment.  
   
 src/Analyses/Measure.hs:`printScaleInformation :: Set ScaleConstraint -> String`
   Print the set of Scale Constraints. Usually the constraint set is first simplified using
-  the results from `solveScaleConstraints`
+  `solveScaleConstraints`
   
-src/Analyses/Measure.hs:`solveBaseConstraints :: Set BaseConstraint -> SSubst`
+src/Analyses/Measure.hs:`solveBaseConstraints :: Set BaseConstraint -> (BSubst, Set BaseConstraint)`
   Akin to `solveScaleConstraints`
   
 src/Analyses/Measure.hs:`printBaseInformation :: Set ScaleConstraint -> String`
@@ -127,4 +137,3 @@ Packages Needed
 ---------------
 
 1. monad-supply
-
