@@ -1,4 +1,4 @@
--- (C) 2013 Pepijn Kokke & Wout Elsinghorst
+-- (C) 2013 Pepijn Kokke (3377520) & Wout Elsinghorst (3344819)
 
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
