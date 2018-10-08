@@ -1,10 +1,10 @@
 name          : FunFlow
 version       : 0.2.0.0
 synopsis      : Control-flow analysis of a simple functional programming language.
-homepage      : https://github.com/pepijnkokke/FunFlow
+homepage      : https://github.com/wenkokke/FunFlow
 license       : MIT
-author        : Pepijn Kokke, Wout Elsinghorst
-copyright     : (c) 2013 Pepijn Kokke, Wout Elsinghorst
+author        : Wen Kokke, Wout Elsinghorst
+copyright     : (c) 2013 Wen Kokke, Wout Elsinghorst
 category      : Language
 build-type    : Simple
 cabal-version : >= 1.8
